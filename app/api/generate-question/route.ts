@@ -3,6 +3,10 @@ import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { supabaseAdmin } from '@/lib/supabase'
 
+// Cache the response to prevent multiple simultaneous generations
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 // Fallback questions for when AI is not available
 const fallbackQuestions = [
   "What assumptions about the world do you hold that you've never questioned?",
@@ -27,8 +31,10 @@ const fallbackQuestions = [
   "If you could eliminate all suffering, but also all joy, would you?",
 ]
 
-function getHourSeed(): number {
-  return Math.floor(Date.now() / (1000 * 60 * 60))
+function getCurrentHourTimestamp(): Date {
+  const now = new Date()
+  const currentHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0)
+  return currentHour
 }
 
 function getFallbackQuestion(usedQuestions: string[]): string {
@@ -94,7 +100,6 @@ async function generateNewQuestion(usedQuestions: string[]): Promise<string> {
     return getFallbackQuestion(usedQuestions)
   }
 
-  const hourSeed = getHourSeed()
   const styleIndex = Math.floor(Math.random() * questionStyles.length)
   const topicIndex = Math.floor(Math.random() * questionTopics.length)
   const style = questionStyles[styleIndex]
@@ -149,69 +154,120 @@ Return only the question text, no quotes or extra formatting.`
   }
 }
 
+// In-memory cache to prevent race conditions
+let generationInProgress: Promise<any> | null = null
+
 export async function GET() {
   try {
-    const currentHour = new Date()
-    currentHour.setMinutes(0, 0, 0, 0)
+    // Get the current hour timestamp
+    const currentHour = getCurrentHourTimestamp()
+    const currentHourISO = currentHour.toISOString()
     
-    // Check if we have a current question in the database
-    const { data: currentQuestion, error: fetchError } = await supabaseAdmin
+    // First, check if we have a current question for this exact hour
+    const { data: existingQuestions, error: fetchError } = await supabaseAdmin
       .from('questions')
       .select('*')
       .eq('is_current', true)
-      .gte('used_at', currentHour.toISOString())
-      .single()
+      .gte('used_at', currentHourISO)
+      .order('used_at', { ascending: false })
+      .limit(1)
     
-    if (currentQuestion && !fetchError) {
-      console.log('Serving current question from database')
-      return NextResponse.json({ 
-        question: currentQuestion.question,
-        source: 'database',
-        createdAt: currentQuestion.created_at
-      })
+    if (!fetchError && existingQuestions && existingQuestions.length > 0) {
+      const currentQuestion = existingQuestions[0]
+      // Check if the question is from the current hour
+      const questionHour = new Date(currentQuestion.used_at)
+      questionHour.setMinutes(0, 0, 0)
+      
+      if (questionHour.getTime() === currentHour.getTime()) {
+        console.log('Serving existing question for current hour')
+        return NextResponse.json({ 
+          question: currentQuestion.question,
+          source: 'database',
+          createdAt: currentQuestion.created_at,
+          hourTimestamp: currentHourISO
+        })
+      }
     }
     
-    // No current question, need to generate a new one
-    console.log('Generating new question for hour:', currentHour.toISOString())
-    
-    // Get all previously used questions to avoid repetition
-    const usedQuestions = await getUsedQuestions()
-    
-    // Generate new question
-    const newQuestionText = await generateNewQuestion(usedQuestions)
-    
-    // Mark all current questions as not current
-    await supabaseAdmin
-      .from('questions')
-      .update({ is_current: false })
-      .eq('is_current', true)
-    
-    // Store the new question in the database
-    const { data: newQuestion, error: insertError } = await supabaseAdmin
-      .from('questions')
-      .insert({
-        question: newQuestionText,
-        used_at: new Date().toISOString(),
-        is_current: true
-      })
-      .select()
-      .single()
-    
-    if (insertError) {
-      console.error('Error inserting question:', insertError)
-      // Return the question anyway, just won't be saved
-      return NextResponse.json({ 
-        question: newQuestionText,
-        source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
-        error: 'Failed to save to database'
-      })
+    // If there's already a generation in progress, wait for it
+    if (generationInProgress) {
+      console.log('Waiting for existing generation to complete')
+      await generationInProgress
+      
+      // Try fetching again after the generation completes
+      const { data: newCheck, error: recheckError } = await supabaseAdmin
+        .from('questions')
+        .select('*')
+        .eq('is_current', true)
+        .gte('used_at', currentHourISO)
+        .single()
+      
+      if (!recheckError && newCheck) {
+        return NextResponse.json({ 
+          question: newCheck.question,
+          source: 'database',
+          createdAt: newCheck.created_at,
+          hourTimestamp: currentHourISO
+        })
+      }
     }
     
-    return NextResponse.json({ 
-      question: newQuestion.question,
-      source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
-      createdAt: newQuestion.created_at
-    })
+    // Start generation and store the promise
+    generationInProgress = (async () => {
+      try {
+        console.log('Generating new question for hour:', currentHourISO)
+        
+        // Get all previously used questions to avoid repetition
+        const usedQuestions = await getUsedQuestions()
+        
+        // Generate new question
+        const newQuestionText = await generateNewQuestion(usedQuestions)
+        
+        // Mark all current questions as not current
+        await supabaseAdmin
+          .from('questions')
+          .update({ is_current: false })
+          .eq('is_current', true)
+        
+        // Store the new question in the database with the exact hour timestamp
+        const { data: newQuestion, error: insertError } = await supabaseAdmin
+          .from('questions')
+          .insert({
+            question: newQuestionText,
+            used_at: currentHourISO,
+            is_current: true
+          })
+          .select()
+          .single()
+        
+        if (insertError) {
+          console.error('Error inserting question:', insertError)
+          // Return the question anyway, just won't be saved
+          return { 
+            question: newQuestionText,
+            source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
+            error: 'Failed to save to database',
+            hourTimestamp: currentHourISO
+          }
+        }
+        
+        return {
+          question: newQuestion.question,
+          source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
+          createdAt: newQuestion.created_at,
+          hourTimestamp: currentHourISO
+        }
+      } finally {
+        // Clear the generation lock after a short delay
+        setTimeout(() => {
+          generationInProgress = null
+        }, 1000)
+      }
+    })()
+    
+    const result = await generationInProgress
+    return NextResponse.json(result)
+    
   } catch (error) {
     console.error('Error in GET handler:', error)
     // Emergency fallback
@@ -219,7 +275,8 @@ export async function GET() {
     return NextResponse.json({ 
       question: emergencyQuestion,
       source: 'emergency-fallback',
-      error: 'Service temporarily unavailable'
+      error: 'Service temporarily unavailable',
+      hourTimestamp: getCurrentHourTimestamp().toISOString()
     })
   }
 }
