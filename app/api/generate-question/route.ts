@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
+import { supabaseAdmin } from '@/lib/supabase'
 
 // Fallback questions for when AI is not available
 const fallbackQuestions = [
@@ -26,24 +27,20 @@ const fallbackQuestions = [
   "If you could eliminate all suffering, but also all joy, would you?",
 ]
 
-// In-memory cache for questions
-// This ensures the same question is served to all users for the same hour
-const questionCache = new Map<number, { question: string; generatedAt: number }>()
-
-function getCurrentHourTimestamp(): number {
-  const now = new Date()
-  const currentHour = new Date(now)
-  currentHour.setMinutes(0, 0, 0)
-  return currentHour.getTime()
-}
-
 function getHourSeed(): number {
   return Math.floor(Date.now() / (1000 * 60 * 60))
 }
 
-function getFallbackQuestion(hourSeed: number): string {
-  const index = hourSeed % fallbackQuestions.length
-  return fallbackQuestions[index]
+function getFallbackQuestion(usedQuestions: string[]): string {
+  // Filter out already used questions
+  const availableQuestions = fallbackQuestions.filter(q => !usedQuestions.includes(q))
+  
+  // If all questions have been used, reset (use all questions)
+  const questionsToChooseFrom = availableQuestions.length > 0 ? availableQuestions : fallbackQuestions
+  
+  // Random selection instead of deterministic
+  const index = Math.floor(Math.random() * questionsToChooseFrom.length)
+  return questionsToChooseFrom[index]
 }
 
 const questionStyles = [
@@ -72,23 +69,45 @@ const questionTopics = [
   "love and relationships"
 ]
 
-async function generateNewQuestion(hourSeed: number): Promise<string> {
+async function getUsedQuestions(): Promise<string[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('questions')
+      .select('question')
+      .not('used_at', 'is', null)
+    
+    if (error) {
+      console.error('Error fetching used questions:', error)
+      return []
+    }
+    
+    return data?.map(q => q.question) || []
+  } catch (error) {
+    console.error('Error in getUsedQuestions:', error)
+    return []
+  }
+}
+
+async function generateNewQuestion(usedQuestions: string[]): Promise<string> {
   // Check if API key is available
   if (!process.env.OPENAI_API_KEY) {
-    return getFallbackQuestion(hourSeed)
+    return getFallbackQuestion(usedQuestions)
   }
 
-  const styleIndex = hourSeed % questionStyles.length
-  const topicIndex = (hourSeed * 7) % questionTopics.length
+  const hourSeed = getHourSeed()
+  const styleIndex = Math.floor(Math.random() * questionStyles.length)
+  const topicIndex = Math.floor(Math.random() * questionTopics.length)
   const style = questionStyles[styleIndex]
   const topic = questionTopics[topicIndex]
+
+  // Format used questions for the prompt
+  const usedQuestionsList = usedQuestions.slice(-20).join('\n- ')
 
   try {
     const { text } = await generateText({
       model: openai('gpt-5-nano-2025-08-07'),
-      temperature: 0.9,
+      temperature: 0.95,
       maxTokens: 120,
-      seed: hourSeed, // Use hour seed for more deterministic results
       prompt: `Generate a single ${style} thought-provoking question about ${topic}. 
       
 The question should:
@@ -97,6 +116,8 @@ The question should:
 - Be between 10-30 words
 - Not be a yes/no question
 - Feel fresh and unexpected
+- Be DIFFERENT from these recently used questions:
+${usedQuestionsList ? `- ${usedQuestionsList}` : '(no previous questions)'}
 
 Examples of good questions:
 - "If all your memories were fiction, would your identity still be real?"
@@ -115,56 +136,95 @@ Return only the question text, no quotes or extra formatting.`
       throw new Error('Invalid question length')
     }
 
+    // Check if this exact question was already used
+    if (usedQuestions.includes(question)) {
+      console.log('Generated duplicate question, trying fallback')
+      return getFallbackQuestion(usedQuestions)
+    }
+
     return question
   } catch (error) {
     console.error('AI generation failed:', error)
-    return getFallbackQuestion(hourSeed)
+    return getFallbackQuestion(usedQuestions)
   }
 }
 
 export async function GET() {
-  const currentHourTimestamp = getCurrentHourTimestamp()
-  const hourSeed = getHourSeed()
-  
-  // Check if we have a cached question for this hour
-  const cached = questionCache.get(currentHourTimestamp)
-  
-  if (cached) {
-    console.log('Serving cached question for hour:', new Date(currentHourTimestamp).toISOString())
+  try {
+    const currentHour = new Date()
+    currentHour.setMinutes(0, 0, 0, 0)
+    
+    // Check if we have a current question in the database
+    const { data: currentQuestion, error: fetchError } = await supabaseAdmin
+      .from('questions')
+      .select('*')
+      .eq('is_current', true)
+      .gte('used_at', currentHour.toISOString())
+      .single()
+    
+    if (currentQuestion && !fetchError) {
+      console.log('Serving current question from database')
+      return NextResponse.json({ 
+        question: currentQuestion.question,
+        source: 'database',
+        createdAt: currentQuestion.created_at
+      })
+    }
+    
+    // No current question, need to generate a new one
+    console.log('Generating new question for hour:', currentHour.toISOString())
+    
+    // Get all previously used questions to avoid repetition
+    const usedQuestions = await getUsedQuestions()
+    
+    // Generate new question
+    const newQuestionText = await generateNewQuestion(usedQuestions)
+    
+    // Mark all current questions as not current
+    await supabaseAdmin
+      .from('questions')
+      .update({ is_current: false })
+      .eq('is_current', true)
+    
+    // Store the new question in the database
+    const { data: newQuestion, error: insertError } = await supabaseAdmin
+      .from('questions')
+      .insert({
+        question: newQuestionText,
+        used_at: new Date().toISOString(),
+        is_current: true
+      })
+      .select()
+      .single()
+    
+    if (insertError) {
+      console.error('Error inserting question:', insertError)
+      // Return the question anyway, just won't be saved
+      return NextResponse.json({ 
+        question: newQuestionText,
+        source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
+        error: 'Failed to save to database'
+      })
+    }
+    
     return NextResponse.json({ 
-      question: cached.question,
-      source: 'cache',
-      hourTimestamp: currentHourTimestamp
+      question: newQuestion.question,
+      source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
+      createdAt: newQuestion.created_at
+    })
+  } catch (error) {
+    console.error('Error in GET handler:', error)
+    // Emergency fallback
+    const emergencyQuestion = fallbackQuestions[Math.floor(Math.random() * fallbackQuestions.length)]
+    return NextResponse.json({ 
+      question: emergencyQuestion,
+      source: 'emergency-fallback',
+      error: 'Service temporarily unavailable'
     })
   }
-
-  // Generate new question for this hour
-  console.log('Generating new question for hour:', new Date(currentHourTimestamp).toISOString())
-  const question = await generateNewQuestion(hourSeed)
-  
-  // Cache the question
-  questionCache.set(currentHourTimestamp, {
-    question,
-    generatedAt: Date.now()
-  })
-  
-  // Clean up old cache entries (keep only last 24 hours)
-  const twentyFourHoursAgo = currentHourTimestamp - (24 * 60 * 60 * 1000)
-  for (const [timestamp] of questionCache) {
-    if (timestamp < twentyFourHoursAgo) {
-      questionCache.delete(timestamp)
-    }
-  }
-  
-  return NextResponse.json({ 
-    question,
-    source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
-    hourTimestamp: currentHourTimestamp
-  })
 }
 
-// Remove POST endpoint - we'll only use GET now
+// Keep POST endpoint for compatibility
 export async function POST() {
-  // Redirect POST requests to GET
   return GET()
 }

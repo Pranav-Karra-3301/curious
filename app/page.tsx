@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 
 interface Question {
   text: string
@@ -260,7 +261,15 @@ export default function QuestionSite() {
           </div>
         )}
 
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2">
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-4">
+          <Link
+            href="/about"
+            className="text-xs underline hover:no-underline transition-all duration-200"
+            style={{ color: "var(--color-muted-brown)" }}
+          >
+            what is this
+          </Link>
+          <span className="text-xs" style={{ color: "var(--color-muted-brown)" }}>·</span>
           <a
             href="https://pranavkarra.me"
             target="_blank"
