@@ -1,25 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 
 interface Question {
   text: string
   timestamp: number
 }
-
-// Fallback questions for when AI is not available
-const fallbackQuestions = [
-  "What assumptions about the world do you hold that you've never questioned?",
-  "If you could know the exact date of your death, would you want to?",
-  "Is it possible to be truly objective about anything you personally experience?",
-  "What would happen to your sense of self if all your memories were gradually replaced?",
-  "Do you think free will exists, or are we just very complex biological machines?",
-  "If consciousness could be transferred to a machine, would it still be you?",
-  "What makes something morally right or wrong beyond cultural agreement?",
-  "Is there a difference between existing and being perceived to exist?",
-  "What would you do if you discovered your entire life was a simulation?",
-  "Can you ever truly know another person, or only your interpretation of them?",
-]
 
 export default function QuestionSite() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
@@ -27,13 +13,14 @@ export default function QuestionSite() {
   const [isTyping, setIsTyping] = useState(false)
   const [timeUntilNext, setTimeUntilNext] = useState("")
   const [showCursor, setShowCursor] = useState(true)
-  const [usedQuestions, setUsedQuestions] = useState<Set<string>>(new Set())
   const [showProgressBars, setShowProgressBars] = useState(false)
+  const [lastFetchedHour, setLastFetchedHour] = useState<number | null>(null)
 
-  const getCurrentQuestionIndex = () => {
+  const getCurrentHourTimestamp = () => {
     const now = new Date()
-    const hoursSinceEpoch = Math.floor(now.getTime() / (1000 * 60 * 60))
-    return hoursSinceEpoch % fallbackQuestions.length
+    const currentHour = new Date(now)
+    currentHour.setMinutes(0, 0, 0)
+    return currentHour.getTime()
   }
 
   const getTimeUntilNextHour = () => {
@@ -43,42 +30,40 @@ export default function QuestionSite() {
     return nextHour.getTime() - now.getTime()
   }
 
-  const getCurrentHourTimestamp = () => {
-    const now = new Date()
-    const currentHour = new Date(now)
-    currentHour.setMinutes(0, 0, 0)
-    return currentHour.getTime()
-  }
+  const fetchQuestion = useCallback(async () => {
+    const currentHour = getCurrentHourTimestamp()
+    
+    // Only fetch if we haven't fetched for this hour yet
+    if (lastFetchedHour === currentHour) {
+      return
+    }
 
-  const generateQuestion = async (): Promise<string> => {
     try {
       const response = await fetch('/api/generate-question', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          usedQuestions: Array.from(usedQuestions).slice(-10)
-        })
+        method: 'GET',
+        cache: 'no-cache' // Ensure we get fresh data
       })
 
       if (!response.ok) {
-        throw new Error('Failed to generate question')
+        throw new Error('Failed to fetch question')
       }
 
       const data = await response.json()
       
-      if (data.source === 'fallback') {
-        console.log('Using fallback question')
-      }
+      console.log(`Fetched question for hour: ${new Date(currentHour).toISOString()}`, data.source)
       
-      return data.question
+      setCurrentQuestion({
+        text: data.question,
+        timestamp: data.hourTimestamp || currentHour
+      })
+      
+      setLastFetchedHour(currentHour)
     } catch (error) {
-      console.error('Error generating question:', error)
-      const questionIndex = getCurrentQuestionIndex()
-      return fallbackQuestions[questionIndex]
+      console.error('Error fetching question:', error)
+      // In case of error, try again in 5 seconds
+      setTimeout(fetchQuestion, 5000)
     }
-  }
+  }, [lastFetchedHour])
 
   // Typing animation effect
   useEffect(() => {
@@ -103,66 +88,56 @@ export default function QuestionSite() {
     return () => clearInterval(typeInterval)
   }, [currentQuestion])
 
+  // Cursor blink effect
   useEffect(() => {
     const blinkInterval = setInterval(() => {
       setShowCursor((prev) => !prev)
-    }, 1000) // Blink every second, synced with countdown
+    }, 1000) // Blink every second
 
     return () => clearInterval(blinkInterval)
   }, [])
 
-  // Timer countdown effect
+  // Timer and question fetching logic
   useEffect(() => {
+    let timer: NodeJS.Timeout
+
     const updateTimer = () => {
-      if (!currentQuestion) return
-
       const timeLeft = getTimeUntilNextHour()
+      const currentHour = getCurrentHourTimestamp()
 
-      if (timeLeft <= 1000) {
-        // Within 1 second of next hour
-        // Time to generate new question
-        generateQuestion().then((newQuestionText) => {
-          setUsedQuestions((prev) => {
-            const newSet = new Set(prev)
-            newSet.add(newQuestionText)
-            // Keep only last 100 questions to prevent memory issues
-            if (newSet.size > 100) {
-              const arr = Array.from(newSet)
-              return new Set(arr.slice(-50))
-            }
-            return newSet
-          })
+      // Check if we need to fetch a new question (new hour started)
+      if (lastFetchedHour !== currentHour) {
+        fetchQuestion()
+      }
 
-          setCurrentQuestion({
-            text: newQuestionText,
-            timestamp: getCurrentHourTimestamp(),
-          })
-        })
-      } else {
-        const minutes = Math.floor(timeLeft / (60 * 1000))
-        const seconds = Math.floor((timeLeft % (60 * 1000)) / 1000)
-        setTimeUntilNext(`${minutes}:${seconds.toString().padStart(2, "0")}`)
+      // Update countdown
+      const minutes = Math.floor(timeLeft / (60 * 1000))
+      const seconds = Math.floor((timeLeft % (60 * 1000)) / 1000)
+      setTimeUntilNext(`${minutes}:${seconds.toString().padStart(2, "0")}`)
+
+      // If we're within 2 seconds of the next hour, prepare to fetch
+      if (timeLeft <= 2000) {
+        // Set a timeout to fetch the new question right when the hour changes
+        setTimeout(() => {
+          setLastFetchedHour(null) // Reset to force fetch
+          fetchQuestion()
+        }, timeLeft + 100) // Add 100ms buffer to ensure we're in the new hour
       }
     }
 
-    const timer = setInterval(updateTimer, 1000)
-    updateTimer() // Run immediately
+    // Initial fetch
+    fetchQuestion()
 
-    return () => clearInterval(timer)
-  }, [currentQuestion, usedQuestions])
+    // Start the timer
+    updateTimer()
+    timer = setInterval(updateTimer, 1000)
 
-  // Initialize with first question
-  useEffect(() => {
-    generateQuestion().then((questionText) => {
-      setUsedQuestions((prev) => new Set(prev).add(questionText))
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [fetchQuestion, lastFetchedHour])
 
-      setCurrentQuestion({
-        text: questionText,
-        timestamp: getCurrentHourTimestamp(),
-      })
-    })
-  }, [])
-
+  // Progress bar calculations
   const getYearProgress = () => {
     const now = new Date()
     const startOfYear = new Date(now.getFullYear(), 0, 1)
@@ -181,6 +156,7 @@ export default function QuestionSite() {
     return Math.floor((daysPassed / totalDays) * 100)
   }
 
+  // Handle window resize for progress bars
   useEffect(() => {
     const checkHeight = () => {
       setShowProgressBars(window.innerHeight >= 600 && window.innerWidth >= 768)
@@ -193,9 +169,6 @@ export default function QuestionSite() {
 
   const yearProgress = getYearProgress()
   const monthProgress = getMonthProgress()
-
-  const currentYear = new Date().getFullYear()
-  const currentMonth = new Date().toLocaleString("default", { month: "long" })
 
   return (
     <div
@@ -263,12 +236,14 @@ export default function QuestionSite() {
           >
             <span className="inline-block">
               {displayedText}
-              <span
-                className={`ml-1 inline-block w-1 h-6 sm:h-8 rounded-full transition-opacity duration-100 ${
-                  showCursor ? "opacity-100" : "opacity-0"
-                }`}
-                style={{ backgroundColor: "var(--color-dark-brown)" }}
-              />
+              {(isTyping || !currentQuestion) && (
+                <span
+                  className={`ml-1 inline-block w-1 h-6 sm:h-8 rounded-full transition-opacity duration-100 ${
+                    showCursor ? "opacity-100" : "opacity-0"
+                  }`}
+                  style={{ backgroundColor: "var(--color-dark-brown)" }}
+                />
+              )}
             </span>
           </div>
         </div>
