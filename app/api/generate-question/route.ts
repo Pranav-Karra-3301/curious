@@ -112,7 +112,6 @@ async function generateNewQuestion(usedQuestions: string[]): Promise<string> {
     const { text } = await generateText({
       model: openai('gpt-5-nano-2025-08-07'),
       temperature: 0.95,
-      maxTokens: 120,
       prompt: `Generate a single ${style} thought-provoking question about ${topic}. 
       
 The question should:
@@ -157,8 +156,11 @@ Return only the question text, no quotes or extra formatting.`
 // In-memory cache to prevent race conditions
 let generationInProgress: Promise<any> | null = null
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url)
+    const currentOnly = url.searchParams.get('currentOnly') === '1'
+    
     // Get the current hour timestamp
     const currentHour = getCurrentHourTimestamp()
     const currentHourISO = currentHour.toISOString()
@@ -187,6 +189,32 @@ export async function GET() {
           hourTimestamp: currentHourISO
         })
       }
+    }
+    
+    // If caller only wants the current question, do not generate a new one
+    if (currentOnly) {
+      // Return the latest available "current" question even if it's from a previous hour
+      const { data: latestCurrent, error: latestError } = await supabaseAdmin
+        .from('questions')
+        .select('*')
+        .eq('is_current', true)
+        .order('used_at', { ascending: false })
+        .limit(1)
+
+      if (!latestError && latestCurrent && latestCurrent.length > 0) {
+        return NextResponse.json({
+          question: latestCurrent[0].question,
+          source: 'database',
+          createdAt: latestCurrent[0].created_at,
+          hourTimestamp: currentHourISO
+        })
+      }
+
+      return NextResponse.json({
+        question: null,
+        source: 'none',
+        hourTimestamp: currentHourISO
+      })
     }
     
     // If there's already a generation in progress, wait for it
@@ -282,6 +310,6 @@ export async function GET() {
 }
 
 // Keep POST endpoint for compatibility
-export async function POST() {
-  return GET()
+export async function POST(request: Request) {
+  return GET(request)
 }

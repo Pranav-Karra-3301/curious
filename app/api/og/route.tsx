@@ -2,6 +2,8 @@ import { ImageResponse } from "next/og"
 import type { NextRequest } from "next/server"
 
 export const runtime = "edge"
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
 // Fallback questions for when API is not available
 const fallbackQuestions = [
@@ -41,13 +43,15 @@ async function getCurrentQuestion(): Promise<string> {
       baseUrl = 'http://localhost:3000'
     }
     
-    const response = await fetch(`${baseUrl}/api/generate-question`, {
+    // Fetch only the current question; do not trigger generation
+    const response = await fetch(`${baseUrl}/api/generate-question?currentOnly=1`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
       // Short timeout for OG image generation
       signal: AbortSignal.timeout(3000),
+      cache: 'no-store',
     })
     
     if (response.ok) {
@@ -73,6 +77,23 @@ export async function GET(request: NextRequest) {
     // Detect if user prefers dark mode
     const userAgent = request.headers.get("user-agent") || ""
     const isDark = userAgent.includes("Dark")
+
+    // Build a base URL for loading the public logo asset
+    const validUrls = [
+      "thingsworthasking.vercel.app",
+      "makesyouthink.vercel.app",
+      "everwonder.vercel.app",
+      "curiousityhour.vercel.app",
+      "haveyouthoughtaboutit.vercel.app",
+      "onthehour.vercel.app",
+      "manual-thinking.vercel.app",
+      "manualthinking.vercel.app",
+      "curious.pranavkarra.me",
+      "everyhour.vercel.app",
+    ]
+    const baseUrl = process.env.VERCEL_URL && validUrls.includes(process.env.VERCEL_URL)
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
 
     return new ImageResponse(
       <div
@@ -103,20 +124,18 @@ export async function GET(request: NextRequest) {
           }}
         />
         
-        {/* Title */}
-        <div
+        {/* Logo above the question */}
+        <img
+          src={`${baseUrl}/logo.png`}
+          alt="curious logo"
+          width={120}
+          height={120}
           style={{
-            fontSize: "24px",
-            fontWeight: "300",
-            letterSpacing: "0.1em",
-            color: isDark ? "#a69885" : "#a69885",
-            marginBottom: "48px",
-            textAlign: "center",
-            textTransform: "uppercase",
+            objectFit: 'contain',
+            marginBottom: '32px',
+            opacity: 0.95,
           }}
-        >
-          Something to think about
-        </div>
+        />
         
         {/* Question */}
         <div
@@ -168,6 +187,12 @@ export async function GET(request: NextRequest) {
       {
         width: 1200,
         height: 630,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'Surrogate-Control': 'no-store',
+        },
       },
     )
   } catch (e: any) {
@@ -187,16 +212,13 @@ export async function GET(request: NextRequest) {
           padding: "80px",
         }}
       >
-        <div
-          style={{
-            fontSize: "48px",
-            fontWeight: "600",
-            color: "#3a3a3a",
-            textAlign: "center",
-          }}
-        >
-          Something to think about
-        </div>
+        <img
+          src={"/logo.png"}
+          alt="curious logo"
+          width={120}
+          height={120}
+          style={{ objectFit: 'contain', marginBottom: '24px' }}
+        />
         <div
           style={{
             fontSize: "20px",
@@ -210,6 +232,12 @@ export async function GET(request: NextRequest) {
       {
         width: 1200,
         height: 630,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'Surrogate-Control': 'no-store',
+        },
       },
     )
   }
