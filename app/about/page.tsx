@@ -86,7 +86,7 @@ export default function AboutPage() {
         {/* Footer links */}
         <div className="flex justify-center gap-6 text-sm">
           <a
-            href="https://github.com/pranavkannepalli/curious"
+            href="https://github.com/Pranav-Karra-3301/curious"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:no-underline transition-all"
