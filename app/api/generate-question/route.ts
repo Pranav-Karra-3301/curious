@@ -85,9 +85,9 @@ async function generateNewQuestion(hourSeed: number): Promise<string> {
 
   try {
     const { text } = await generateText({
-      model: openai('gpt-4o-mini'),
+      model: openai('gpt-5-nano-2025-08-07'),
       temperature: 0.9,
-      maxTokens: 100,
+      maxTokens: 120,
       seed: hourSeed, // Use hour seed for more deterministic results
       prompt: `Generate a single ${style} thought-provoking question about ${topic}. 
       
