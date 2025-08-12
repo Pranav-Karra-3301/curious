@@ -27,11 +27,11 @@ function StatusDot({ status, label }: StatusDotProps) {
   const getStatusText = () => {
     switch (status) {
       case 'working':
-        return 'Operational'
+        return 'పని చేస్తోంది'
       case 'fallback':
-        return 'Using fallback'
+        return 'ఫాల్‌బ్యాక్ ఉపయోగిస్తోంది'
       case 'error':
-        return 'Error'
+        return 'దోషం'
     }
   }
   
@@ -101,13 +101,13 @@ export default function StatusIndicator() {
     return (
       <div className="flex flex-col gap-4">
         <div className="text-sm font-medium" style={{ color: "var(--color-charcoal)" }}>
-          System Status
+          సిస్టమ్ స్థితి
         </div>
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <div className="w-3 h-3 rounded-full bg-gray-300 animate-pulse" />
             <span className="text-sm" style={{ color: "var(--color-muted-brown)" }}>
-              Checking...
+              తనిఖీ చేస్తోంది...
             </span>
           </div>
         </div>

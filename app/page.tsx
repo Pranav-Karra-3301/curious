@@ -12,10 +12,12 @@ export default function QuestionSite() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
   const [displayedText, setDisplayedText] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [isUntyping, setIsUntyping] = useState(false)
   const [timeUntilNext, setTimeUntilNext] = useState("")
   const [showCursor, setShowCursor] = useState(true)
   const [showProgressBars, setShowProgressBars] = useState(false)
   const [lastFetchedHour, setLastFetchedHour] = useState<number | null>(null)
+  const [pendingQuestion, setPendingQuestion] = useState<Question | null>(null)
 
   const getCurrentHourTimestamp = () => {
     const now = new Date()
@@ -30,6 +32,22 @@ export default function QuestionSite() {
     nextHour.setHours(now.getHours() + 1, 0, 0, 0)
     return nextHour.getTime() - now.getTime()
   }
+
+  const triggerPreGeneration = useCallback(async () => {
+    try {
+      const response = await fetch('/api/pre-generate', {
+        method: 'GET',
+        cache: 'no-cache'
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Pre-generation result:', data.status)
+      }
+    } catch (error) {
+      console.error('Pre-generation failed:', error)
+    }
+  }, [])
 
   const fetchQuestion = useCallback(async () => {
     const currentHour = getCurrentHourTimestamp()
@@ -53,10 +71,18 @@ export default function QuestionSite() {
       
       console.log(`Fetched question for hour: ${new Date(currentHour).toISOString()}`, data.source)
       
-      setCurrentQuestion({
+      const newQuestion = {
         text: data.question,
         timestamp: data.hourTimestamp || currentHour
-      })
+      }
+      
+      // If this is a new hour and we have a current question, trigger smooth transition
+      if (currentQuestion && lastFetchedHour && lastFetchedHour !== currentHour) {
+        setPendingQuestion(newQuestion)
+        setIsUntyping(true)
+      } else {
+        setCurrentQuestion(newQuestion)
+      }
       
       setLastFetchedHour(currentHour)
     } catch (error) {
@@ -64,11 +90,34 @@ export default function QuestionSite() {
       // In case of error, try again in 5 seconds
       setTimeout(fetchQuestion, 5000)
     }
-  }, [lastFetchedHour])
+  }, [lastFetchedHour, currentQuestion])
+
+  // Untyping animation effect
+  useEffect(() => {
+    if (!isUntyping || !currentQuestion) return
+
+    let index = displayedText.length
+    const untypeInterval = setInterval(() => {
+      if (index > 0) {
+        setDisplayedText(currentQuestion.text.slice(0, index - 1))
+        index--
+      } else {
+        setIsUntyping(false)
+        clearInterval(untypeInterval)
+        // Switch to pending question after untyping is complete
+        if (pendingQuestion) {
+          setCurrentQuestion(pendingQuestion)
+          setPendingQuestion(null)
+        }
+      }
+    }, 30) // 30ms per character for smooth untyping
+
+    return () => clearInterval(untypeInterval)
+  }, [isUntyping, currentQuestion, displayedText.length, pendingQuestion])
 
   // Typing animation effect
   useEffect(() => {
-    if (!currentQuestion) return
+    if (!currentQuestion || isUntyping) return
 
     setIsTyping(true)
     setDisplayedText("")
@@ -87,7 +136,7 @@ export default function QuestionSite() {
     }, 50) // 50ms per character for smooth typing
 
     return () => clearInterval(typeInterval)
-  }, [currentQuestion])
+  }, [currentQuestion, isUntyping])
 
   // Cursor blink effect
   useEffect(() => {
@@ -116,6 +165,11 @@ export default function QuestionSite() {
       const seconds = Math.floor((timeLeft % (60 * 1000)) / 1000)
       setTimeUntilNext(`${minutes}:${seconds.toString().padStart(2, "0")}`)
 
+      // Trigger pre-generation 5 minutes before the hour
+      if (minutes === 4 && seconds >= 55 && seconds <= 59) {
+        triggerPreGeneration()
+      }
+
       // If we're within 2 seconds of the next hour, prepare to fetch
       if (timeLeft <= 2000) {
         // Set a timeout to fetch the new question right when the hour changes
@@ -136,7 +190,7 @@ export default function QuestionSite() {
     return () => {
       if (timer) clearInterval(timer)
     }
-  }, [fetchQuestion, lastFetchedHour])
+  }, [fetchQuestion, lastFetchedHour, triggerPreGeneration])
 
   // Progress bar calculations
   const getYearProgress = () => {
@@ -193,7 +247,7 @@ export default function QuestionSite() {
                     }}
                   />
                   <div className="absolute left-6 top-1/2 transform -translate-y-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-10">
-                    {isFilled ? `${yearProgress}% of year completed` : `${100 - yearProgress}% of year remaining`}
+                    {isFilled ? `${yearProgress}% సంవత్సరం పూర్తయింది` : `${100 - yearProgress}% సంవత్సరం మిగిలి ఉంది`}
                   </div>
                 </div>
               )
@@ -219,7 +273,7 @@ export default function QuestionSite() {
                     }}
                   />
                   <div className="absolute right-6 top-1/2 transform -translate-y-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-10">
-                    {isFilled ? `${monthProgress}% of month completed` : `${100 - monthProgress}% of month remaining`}
+                    {isFilled ? `${monthProgress}% నెల పూర్తయింది` : `${100 - monthProgress}% నెల మిగిలి ఉంది`}
                   </div>
                 </div>
               )
@@ -237,7 +291,7 @@ export default function QuestionSite() {
           >
             <span className="inline-block">
               {displayedText}
-              {(isTyping || !currentQuestion) && (
+              {(isTyping || isUntyping || !currentQuestion) && (
                 <span
                   className={`ml-1 inline-block w-1 h-6 sm:h-8 rounded-full transition-opacity duration-100 ${
                     showCursor ? "opacity-100" : "opacity-0"
@@ -253,7 +307,7 @@ export default function QuestionSite() {
         {timeUntilNext && (
           <div className="space-y-2">
             <div className="text-sm font-light tracking-wide" style={{ color: "var(--color-muted-brown)" }}>
-              next question in
+              తదుపరి ప్రశ్న
             </div>
             <div className="text-lg font-mono" style={{ color: "var(--color-dark-brown)" }}>
               {timeUntilNext}
@@ -267,7 +321,7 @@ export default function QuestionSite() {
             className="text-xs underline hover:no-underline transition-all duration-200"
             style={{ color: "var(--color-muted-brown)" }}
           >
-            what is this
+            ఇది ఏమిటి
           </Link>
           <span className="text-xs" style={{ color: "var(--color-muted-brown)" }}>·</span>
           <a

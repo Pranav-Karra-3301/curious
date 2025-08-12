@@ -37,7 +37,7 @@ export default function AboutPage() {
             >
               <path d="M19 12H5M12 19l-7-7 7-7" />
             </svg>
-            back to the question
+            ప్రశ్నకు తిరిగి వెళ్ళు
           </Link>
         </div>
 
@@ -47,7 +47,7 @@ export default function AboutPage() {
             className="text-2xl md:text-3xl font-bold text-center"
             style={{ color: "var(--color-charcoal)" }}
           >
-            what is this?
+            ఇది ఏమిటి?
           </h1>
 
           <div
@@ -55,25 +55,27 @@ export default function AboutPage() {
             style={{ color: "var(--color-charcoal)" }}
           >
             <p>
-              i was having a conversation with a friend about how machines took over manual labor, so we invented gyms - 
-              places where we voluntarily go to lift heavy things and run on treadmills, basically doing the physical work 
-              our ancestors did for survival.
+              నేను ఒక స్నేహితుడితో మాట్లాడుతున్నాను - యంత్రాలు శారీరక శ్రమను తీసుకున్నాయి కాబట్టి మనం జిమ్‌లను కనుగొన్నాము - 
+              మనం స్వచ్ఛందంగా భారమైన వస్తువులను ఎత్తడానికి మరియు ట్రెడ్‌మిల్‌లపై పరుగెత్తడానికి వెళ్ళే స్థలాలు, అవసరంగా మన పూర్వీకులు 
+              చేసిన శారీరక పనిని చేస్తున్నాము.
             </p>
 
             <p>
-              and now ai is taking over mental labor. so maybe we'll need mental gyms - places or services where we 
-              deliberately avoid ai and force ourselves to think manually, to keep our cognitive muscles from atrophying.
+              ఇప్పుడు AI మానసిక శ్రమను తీసుకుంటోంది. కాబట్టి మనకు మానసిక జిమ్‌లు అవసరం కావచ్చు - మనం 
+              ఉద్దేశపూర్వకంగా AIని నివారించి మానవీయంగా ఆలోచించుకునే స్థలాలు లేదా సేవలు, మన జ్ఞాన కండరాలు క్షీణించకుండా ఉంచడానికి.
             </p>
 
             <p>
-              that conversation inspired me to make this site. it's a simple mental gym - just one curious question 
-              every hour, forever. no algorithms, no personalization, no engagement metrics. everyone sees the same 
-              question at the same time. just something to think about while you're waiting for the coffee to brew 
-              or sitting on the train.
+              ఆ సంభాషణ నాకు ఈ సైట్ చేయడానికి ప్రేరణ ఇచ్చింది. ఇది ఒక సాధారణ మానసిక జిమ్ - ప్రతి గంటకు ఒక ఆసక్తికరమైన ప్రశ్న, 
+              ఎప్పటికీ. అల్గారిథమ్‌లు లేవు, వ్యక్తిగతీకరణ లేదు, ఎంగేజ్‌మెంట్ మెట్రిక్స్ లేవు. అందరూ అదే సమయంలో 
+              అదే ప్రశ్నను చూస్తారు. కాఫీ కోసం వేచి ఉన్నప్పుడు లేదా రైలులో కూర్చున్నప్పుడు 
+              ఆలోచించడానికి ఏదో ఒకటి.
+              
+              నా అమ్మమ్మకు షేర్ చేయడానికి నేను ఈ తెలుగు వెర్షన్ చేశాను 😊
             </p>
 
             <p className="text-sm" style={{ color: "var(--color-muted-brown)" }}>
-              questions are generated using <span className="font-mono">gpt-5-nano-2025-08-07</span>
+              ప్రశ్నలు <span className="font-mono">gpt-5-nano-2025-08-07</span> ఉపయోగించి సృష్టించబడతాయి
             </p>
           </div>
         </div>
@@ -92,7 +94,7 @@ export default function AboutPage() {
             className="underline hover:no-underline transition-all"
             style={{ color: "var(--color-muted-brown)" }}
           >
-            source code
+            సోర్స్ కోడ్
           </a>
           <a
             href="https://pranavkarra.me"

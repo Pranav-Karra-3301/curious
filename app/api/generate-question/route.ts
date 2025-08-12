@@ -37,16 +37,11 @@ function getCurrentHourTimestamp(): Date {
   return currentHour
 }
 
-function getFallbackQuestion(usedQuestions: string[]): string {
-  // Filter out already used questions
-  const availableQuestions = fallbackQuestions.filter(q => !usedQuestions.includes(q))
-  
-  // If all questions have been used, reset (use all questions)
-  const questionsToChooseFrom = availableQuestions.length > 0 ? availableQuestions : fallbackQuestions
-  
-  // Random selection instead of deterministic
-  const index = Math.floor(Math.random() * questionsToChooseFrom.length)
-  return questionsToChooseFrom[index]
+function getFallbackQuestion(targetHour: Date): string {
+  // Use deterministic selection based on hour timestamp to avoid flipping
+  const hoursSinceEpoch = Math.floor(targetHour.getTime() / (1000 * 60 * 60))
+  const index = hoursSinceEpoch % fallbackQuestions.length
+  return fallbackQuestions[index]
 }
 
 const questionStyles = [
@@ -94,14 +89,16 @@ async function getUsedQuestions(): Promise<string[]> {
   }
 }
 
-async function generateNewQuestion(usedQuestions: string[]): Promise<string> {
+async function generateNewQuestion(usedQuestions: string[], targetHour: Date): Promise<string> {
   // Check if API key is available
   if (!process.env.OPENAI_API_KEY) {
-    return getFallbackQuestion(usedQuestions)
+    return getFallbackQuestion(targetHour)
   }
 
-  const styleIndex = Math.floor(Math.random() * questionStyles.length)
-  const topicIndex = Math.floor(Math.random() * questionTopics.length)
+  // Use deterministic selection based on hour for consistency
+  const hoursSinceEpoch = Math.floor(targetHour.getTime() / (1000 * 60 * 60))
+  const styleIndex = hoursSinceEpoch % questionStyles.length
+  const topicIndex = (hoursSinceEpoch * 7) % questionTopics.length // Use different multiplier for topic
   const style = questionStyles[styleIndex]
   const topic = questionTopics[topicIndex]
 
@@ -142,14 +139,14 @@ Return only the question text, no quotes or extra formatting.`
 
     // Check if this exact question was already used
     if (usedQuestions.includes(question)) {
-      console.log('Generated duplicate question, trying fallback')
-      return getFallbackQuestion(usedQuestions)
+      console.log('Generated duplicate question, using fallback')
+      return getFallbackQuestion(targetHour)
     }
 
     return question
   } catch (error) {
     console.error('AI generation failed:', error)
-    return getFallbackQuestion(usedQuestions)
+    return getFallbackQuestion(targetHour)
   }
 }
 
@@ -181,11 +178,46 @@ export async function GET(request: Request) {
       questionHour.setMinutes(0, 0, 0)
       
       if (questionHour.getTime() === currentHour.getTime()) {
-        console.log('Serving existing question for current hour')
+        console.log('Serving existing current question for current hour')
         return NextResponse.json({ 
           question: currentQuestion.question,
           source: 'database',
           createdAt: currentQuestion.created_at,
+          hourTimestamp: currentHourISO
+        })
+      }
+    }
+    
+    // Check if we have a pre-generated question for this hour
+    const { data: pregenQuestion, error: pregenError } = await supabaseAdmin
+      .from('questions')
+      .select('*')
+      .eq('used_at', currentHourISO)
+      .eq('is_current', false)
+      .single()
+    
+    if (!pregenError && pregenQuestion) {
+      console.log('Activating pre-generated question for current hour')
+      
+      // Mark all current questions as not current
+      await supabaseAdmin
+        .from('questions')
+        .update({ is_current: false })
+        .eq('is_current', true)
+      
+      // Mark this pre-generated question as current
+      const { data: activatedQuestion, error: updateError } = await supabaseAdmin
+        .from('questions')
+        .update({ is_current: true })
+        .eq('id', pregenQuestion.id)
+        .select()
+        .single()
+      
+      if (!updateError && activatedQuestion) {
+        return NextResponse.json({
+          question: activatedQuestion.question,
+          source: 'pre-generated',
+          createdAt: activatedQuestion.created_at,
           hourTimestamp: currentHourISO
         })
       }
@@ -240,16 +272,16 @@ export async function GET(request: Request) {
       }
     }
     
-    // Start generation and store the promise
+    // Last resort: generate new question immediately (fallback)
     generationInProgress = (async () => {
       try {
-        console.log('Generating new question for hour:', currentHourISO)
+        console.log('Emergency: Generating new question for hour:', currentHourISO)
         
         // Get all previously used questions to avoid repetition
         const usedQuestions = await getUsedQuestions()
         
-        // Generate new question
-        const newQuestionText = await generateNewQuestion(usedQuestions)
+        // Generate new question for current hour
+        const newQuestionText = await generateNewQuestion(usedQuestions, currentHour)
         
         // Mark all current questions as not current
         await supabaseAdmin
@@ -273,7 +305,7 @@ export async function GET(request: Request) {
           // Return the question anyway, just won't be saved
           return { 
             question: newQuestionText,
-            source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
+            source: process.env.OPENAI_API_KEY ? 'ai-emergency' : 'fallback-emergency',
             error: 'Failed to save to database',
             hourTimestamp: currentHourISO
           }
@@ -281,7 +313,7 @@ export async function GET(request: Request) {
         
         return {
           question: newQuestion.question,
-          source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
+          source: process.env.OPENAI_API_KEY ? 'ai-emergency' : 'fallback-emergency',
           createdAt: newQuestion.created_at,
           hourTimestamp: currentHourISO
         }
@@ -298,13 +330,14 @@ export async function GET(request: Request) {
     
   } catch (error) {
     console.error('Error in GET handler:', error)
-    // Emergency fallback
-    const emergencyQuestion = fallbackQuestions[Math.floor(Math.random() * fallbackQuestions.length)]
+    // Emergency fallback using deterministic selection
+    const currentHour = getCurrentHourTimestamp()
+    const emergencyQuestion = getFallbackQuestion(currentHour)
     return NextResponse.json({ 
       question: emergencyQuestion,
       source: 'emergency-fallback',
       error: 'Service temporarily unavailable',
-      hourTimestamp: getCurrentHourTimestamp().toISOString()
+      hourTimestamp: currentHour.toISOString()
     })
   }
 }
