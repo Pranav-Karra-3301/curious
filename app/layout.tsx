@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Ubuntu } from "next/font/google"
+import { Analytics } from "@vercel/analytics/react"
 import "./globals.css"
 
 const ubuntu = Ubuntu({
@@ -13,12 +14,12 @@ const ubuntu = Ubuntu({
 export const metadata: Metadata = {
   title: "Something to think about",
   description: "Hourly questions to spark critical thinking",
-  generator: "v0.dev",
+  metadataBase: new URL('https://curious.pranavkarra.me'),
   openGraph: {
     title: "Something to think about",
     description: "Hourly questions to spark critical thinking",
-    url: "https://everyhour.vercel.app",
-    siteName: "Every Hour",
+    url: "https://curious.pranavkarra.me",
+    siteName: "Curious",
     images: [
       {
         url: "/api/og",
@@ -45,7 +46,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={ubuntu.variable}>
-      <body className="font-ubuntu antialiased">{children}</body>
+      <body className="font-ubuntu antialiased">
+        {children}
+        <Analytics />
+      </body>
     </html>
   )
 }
