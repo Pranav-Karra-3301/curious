@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Ubuntu } from "next/font/google"
 import { Analytics } from "@vercel/analytics/react"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import "./globals.css"
 
 const ubuntu = Ubuntu({
@@ -49,6 +50,7 @@ export default function RootLayout({
       <body className="font-ubuntu antialiased">
         {children}
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   )
