@@ -1,0 +1,149 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+:root {
+  /* Custom beige color palette - Light Mode */
+  --color-cream: #f7f5f0;
+  --color-warm-beige: #e8e2d5;
+  --color-soft-brown: #c4b5a0;
+  --color-dark-brown: #8b7355;
+  --color-charcoal: #3a3a3a;
+  /* Added lighter muted brown for better readability */
+  --color-muted-brown: #a69885;
+}
+
+/* Added automatic dark mode detection with beige variants */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Custom beige color palette - Dark Mode */
+    --color-cream: #2a2520;
+    --color-warm-beige: #3d3529;
+    --color-soft-brown: #5a4d3a;
+    --color-dark-brown: #8b7355;
+    --color-charcoal: #e8e2d5;
+    /* Added lighter muted brown for dark mode */
+    --color-muted-brown: #6b5d4a;
+  }
+}
+
+/* Updated root colors to use system preference */
+:root {
+  --background: light-dark(#f7f5f0, #2a2520);
+  --foreground: light-dark(#3a3a3a, #e8e2d5);
+  --card: light-dark(#f7f5f0, #2a2520);
+  --card-foreground: light-dark(#3a3a3a, #e8e2d5);
+  --popover: light-dark(#f7f5f0, #2a2520);
+  --popover-foreground: light-dark(#3a3a3a, #e8e2d5);
+  --primary: light-dark(#8b7355, #c4b5a0);
+  --primary-foreground: light-dark(#f7f5f0, #2a2520);
+  --secondary: light-dark(#e8e2d5, #3d3529);
+  --secondary-foreground: light-dark(#3a3a3a, #e8e2d5);
+  --muted: light-dark(#e8e2d5, #3d3529);
+  --muted-foreground: light-dark(#8b7355, #c4b5a0);
+  --accent: light-dark(#c4b5a0, #5a4d3a);
+  --accent-foreground: light-dark(#3a3a3a, #e8e2d5);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: light-dark(#c4b5a0, #5a4d3a);
+  --input: light-dark(#e8e2d5, #3d3529);
+  --ring: light-dark(#8b7355, #c4b5a0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: light-dark(#f7f5f0, #2a2520);
+  --sidebar-foreground: light-dark(#3a3a3a, #e8e2d5);
+  --sidebar-primary: light-dark(#8b7355, #c4b5a0);
+  --sidebar-primary-foreground: light-dark(#f7f5f0, #2a2520);
+  --sidebar-accent: light-dark(#e8e2d5, #3d3529);
+  --sidebar-accent-foreground: light-dark(#3a3a3a, #e8e2d5);
+  --sidebar-border: light-dark(#c4b5a0, #5a4d3a);
+  --sidebar-ring: light-dark(#8b7355, #c4b5a0);
+}
+
+/* Removed .dark class since we're using automatic detection */
+
+@theme inline {
+  --font-ubuntu: var(--font-ubuntu);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Added smooth transition for theme changes */
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* Custom typing cursor animation */
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.typing-cursor {
+  animation: blink 1s infinite;
+}
+
+/* Smooth fade-in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease-out;
+}
