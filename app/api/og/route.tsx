@@ -19,10 +19,27 @@ const fallbackQuestions = [
 
 async function getCurrentQuestion(): Promise<string> {
   try {
-    // Fetch the current question from our API endpoint
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
-      : 'http://localhost:3000'
+    // Allow-listed production URLs for OG image API calls
+    const validUrls = [
+      "thingsworthasking.vercel.app",
+      "makesyouthink.vercel.app",
+      "everwonder.vercel.app",
+      "curiousityhour.vercel.app",
+      "haveyouthoughtaboutit.vercel.app",
+      "onthehour.vercel.app",
+      "manual-thinking.vercel.app",
+      "manualthinking.vercel.app",
+      "curious.pranavkarra.me",
+      "everyhour.vercel.app",
+    ]
+
+    let baseUrl: string
+
+    if (process.env.VERCEL_URL && validUrls.includes(process.env.VERCEL_URL)) {
+      baseUrl = `https://${process.env.VERCEL_URL}`
+    } else {
+      baseUrl = 'http://localhost:3000'
+    }
     
     const response = await fetch(`${baseUrl}/api/generate-question`, {
       method: 'GET',

@@ -8,6 +8,16 @@ export default function AboutPage() {
       style={{ backgroundColor: "var(--color-cream)" }}
     >
       <div className="max-w-2xl w-full space-y-8 fade-in">
+        {/* Logo */}
+        <div className="w-full flex justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="Curious logo"
+            className="block"
+            style={{ width: "120px", height: "120px", objectFit: "contain" }}
+          />
+        </div>
         {/* Back to question link */}
         <div className="text-center">
           <Link

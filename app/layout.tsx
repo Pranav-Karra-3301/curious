@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   title: "Something to think about",
   description: "Hourly questions to spark critical thinking",
   metadataBase: new URL('https://curious.pranavkarra.me'),
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
   openGraph: {
     title: "Something to think about",
     description: "Hourly questions to spark critical thinking",
