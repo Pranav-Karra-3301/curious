@@ -122,7 +122,7 @@ export default function StatusIndicator() {
       </div>
       <div className="flex flex-col gap-3">
         <StatusDot status={status.openai} label="OpenAI API" />
-        <StatusDot status={status.supabase} label="Supabase Database" />
+        <StatusDot status={status.supabase} label="Supabase - microgarage/thinking-gym" />
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Ubuntu } from "next/font/google"
-import { Analytics } from "@vercel/analytics/react"
+import { Analytics } from "@vercel/analytics/next"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import "./globals.css"
 
