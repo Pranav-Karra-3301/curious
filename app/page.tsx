@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 
 interface Question {
@@ -10,12 +10,15 @@ interface Question {
 
 export default function QuestionSite() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
+  const [nextQuestion, setNextQuestion] = useState<Question | null>(null)
   const [displayedText, setDisplayedText] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [isUntyping, setIsUntyping] = useState(false)
   const [timeUntilNext, setTimeUntilNext] = useState("")
   const [showCursor, setShowCursor] = useState(true)
   const [showProgressBars, setShowProgressBars] = useState(false)
-  const [lastFetchedHour, setLastFetchedHour] = useState<number | null>(null)
+  const [lastRotationHour, setLastRotationHour] = useState<number | null>(null)
+  const rotationInProgressRef = useRef(false)
 
   const getCurrentHourTimestamp = () => {
     const now = new Date()
@@ -31,44 +34,149 @@ export default function QuestionSite() {
     return nextHour.getTime() - now.getTime()
   }
 
-  const fetchQuestion = useCallback(async () => {
-    const currentHour = getCurrentHourTimestamp()
-    
-    // Only fetch if we haven't fetched for this hour yet
-    if (lastFetchedHour === currentHour) {
-      return
-    }
-
+  // Initialize questions on mount
+  const initializeQuestions = useCallback(async () => {
     try {
-      const response = await fetch('/api/generate-question', {
+      const response = await fetch('/api/generate-question?action=initialize', {
         method: 'GET',
-        cache: 'no-cache' // Ensure we get fresh data
+        cache: 'no-cache'
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch question')
+        throw new Error('Failed to initialize questions')
       }
 
       const data = await response.json()
       
-      console.log(`Fetched question for hour: ${new Date(currentHour).toISOString()}`, data.source)
+      if (data.current) {
+        setCurrentQuestion({
+          text: data.current.question,
+          timestamp: new Date(data.currentHourTimestamp).getTime()
+        })
+      }
       
-      setCurrentQuestion({
-        text: data.question,
-        timestamp: data.hourTimestamp || currentHour
+      if (data.next) {
+        setNextQuestion({
+          text: data.next.question,
+          timestamp: new Date(data.nextHourTimestamp).getTime()
+        })
+      }
+      
+      setLastRotationHour(getCurrentHourTimestamp())
+    } catch (error) {
+      console.error('Error initializing questions:', error)
+      // Retry in 5 seconds
+      setTimeout(initializeQuestions, 5000)
+    }
+  }, [])
+
+  // Rotate questions when hour changes
+  const rotateQuestions = useCallback(async () => {
+    const currentHour = getCurrentHourTimestamp()
+    
+    // Prevent duplicate rotations
+    if (rotationInProgressRef.current || lastRotationHour === currentHour) {
+      return
+    }
+    
+    rotationInProgressRef.current = true
+    
+    try {
+      // First, transition to the pre-loaded next question with untype/retype animation
+      if (nextQuestion) {
+        // Start untyping animation
+        setIsUntyping(true)
+        
+        // Wait for untyping to complete
+        await new Promise(resolve => {
+          const text = displayedText
+          let index = text.length
+          
+          const untypeInterval = setInterval(() => {
+            if (index > 0) {
+              setDisplayedText(text.slice(0, index - 1))
+              index--
+            } else {
+              clearInterval(untypeInterval)
+              setIsUntyping(false)
+              resolve(undefined)
+            }
+          }, 30) // Faster untyping
+        })
+        
+        // Switch to next question
+        setCurrentQuestion({
+          text: nextQuestion.text,
+          timestamp: currentHour
+        })
+        setNextQuestion(null)
+      }
+      
+      // Trigger backend rotation to generate new next question
+      const response = await fetch('/api/generate-question?action=rotate', {
+        method: 'GET',
+        cache: 'no-cache'
       })
       
-      setLastFetchedHour(currentHour)
+      if (!response.ok) {
+        throw new Error('Failed to rotate questions')
+      }
+      
+      // Fetch both questions to get the newly generated next
+      const bothResponse = await fetch('/api/generate-question?action=get-both', {
+        method: 'GET',
+        cache: 'no-cache'
+      })
+      
+      if (bothResponse.ok) {
+        const data = await bothResponse.json()
+        
+        if (data.next) {
+          setNextQuestion({
+            text: data.next.question,
+            timestamp: new Date(data.nextHourTimestamp).getTime()
+          })
+        }
+      }
+      
+      setLastRotationHour(currentHour)
     } catch (error) {
-      console.error('Error fetching question:', error)
-      // In case of error, try again in 5 seconds
-      setTimeout(fetchQuestion, 5000)
+      console.error('Error rotating questions:', error)
+      // Try fetching both questions as fallback
+      try {
+        const response = await fetch('/api/generate-question?action=get-both', {
+          method: 'GET',
+          cache: 'no-cache'
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          
+          if (data.current) {
+            setCurrentQuestion({
+              text: data.current.question,
+              timestamp: new Date(data.currentHourTimestamp).getTime()
+            })
+          }
+          
+          if (data.next) {
+            setNextQuestion({
+              text: data.next.question,
+              timestamp: new Date(data.nextHourTimestamp).getTime()
+            })
+          }
+        }
+      } catch (fallbackError) {
+        console.error('Fallback fetch failed:', fallbackError)
+      }
+    } finally {
+      rotationInProgressRef.current = false
     }
-  }, [lastFetchedHour])
+  }, [nextQuestion, displayedText, lastRotationHour])
 
   // Typing animation effect
   useEffect(() => {
-    if (!currentQuestion) return
+    if (!currentQuestion || isUntyping) return
 
     setIsTyping(true)
     setDisplayedText("")
@@ -87,7 +195,7 @@ export default function QuestionSite() {
     }, 50) // 50ms per character for smooth typing
 
     return () => clearInterval(typeInterval)
-  }, [currentQuestion])
+  }, [currentQuestion, isUntyping])
 
   // Cursor blink effect
   useEffect(() => {
@@ -98,7 +206,7 @@ export default function QuestionSite() {
     return () => clearInterval(blinkInterval)
   }, [])
 
-  // Timer and question fetching logic
+  // Timer and rotation logic
   useEffect(() => {
     let timer: NodeJS.Timeout
 
@@ -106,9 +214,9 @@ export default function QuestionSite() {
       const timeLeft = getTimeUntilNextHour()
       const currentHour = getCurrentHourTimestamp()
 
-      // Check if we need to fetch a new question (new hour started)
-      if (lastFetchedHour !== currentHour) {
-        fetchQuestion()
+      // Check if we need to rotate (new hour started)
+      if (lastRotationHour !== null && lastRotationHour !== currentHour) {
+        rotateQuestions()
       }
 
       // Update countdown
@@ -116,18 +224,30 @@ export default function QuestionSite() {
       const seconds = Math.floor((timeLeft % (60 * 1000)) / 1000)
       setTimeUntilNext(`${minutes}:${seconds.toString().padStart(2, "0")}`)
 
-      // If we're within 2 seconds of the next hour, prepare to fetch
-      if (timeLeft <= 2000) {
-        // Set a timeout to fetch the new question right when the hour changes
-        setTimeout(() => {
-          setLastFetchedHour(null) // Reset to force fetch
-          fetchQuestion()
-        }, timeLeft + 100) // Add 100ms buffer to ensure we're in the new hour
+      // Pre-rotation check: ensure we're ready for the next hour
+      if (timeLeft <= 5000 && !nextQuestion) {
+        // Try to fetch next question if we don't have one
+        fetch('/api/generate-question?action=get-both', {
+          method: 'GET',
+          cache: 'no-cache'
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.next) {
+              setNextQuestion({
+                text: data.next.question,
+                timestamp: new Date(data.nextHourTimestamp).getTime()
+              })
+            }
+          })
+          .catch(error => console.error('Error pre-fetching next question:', error))
       }
     }
 
     // Initial fetch
-    fetchQuestion()
+    if (!currentQuestion) {
+      initializeQuestions()
+    }
 
     // Start the timer
     updateTimer()
@@ -136,7 +256,7 @@ export default function QuestionSite() {
     return () => {
       if (timer) clearInterval(timer)
     }
-  }, [fetchQuestion, lastFetchedHour])
+  }, [currentQuestion, nextQuestion, lastRotationHour, rotateQuestions, initializeQuestions])
 
   // Progress bar calculations
   const getYearProgress = () => {
@@ -237,7 +357,7 @@ export default function QuestionSite() {
           >
             <span className="inline-block">
               {displayedText}
-              {(isTyping || !currentQuestion) && (
+              {(isTyping || isUntyping || !currentQuestion) && (
                 <span
                   className={`ml-1 inline-block w-1 h-6 sm:h-8 rounded-full transition-opacity duration-100 ${
                     showCursor ? "opacity-100" : "opacity-0"
@@ -258,6 +378,13 @@ export default function QuestionSite() {
             <div className="text-lg font-mono" style={{ color: "var(--color-dark-brown)" }}>
               {timeUntilNext}
             </div>
+          </div>
+        )}
+
+        {/* Debug info - remove in production */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="text-xs text-gray-400">
+            {nextQuestion ? '✓ Next question ready' : '⏳ Preparing next question...'}
           </div>
         )}
 
