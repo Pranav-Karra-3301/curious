@@ -7,46 +7,17 @@ import { supabaseAdmin } from '@/lib/supabase'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-// Fallback questions for when AI is not available
-const fallbackQuestions = [
-  "What assumptions about the world do you hold that you've never questioned?",
-  "If you could know the exact date of your death, would you want to?",
-  "Is it possible to be truly objective about anything you personally experience?",
-  "What would happen to your sense of self if all your memories were gradually replaced?",
-  "Do you think free will exists, or are we just very complex biological machines?",
-  "If consciousness could be transferred to a machine, would it still be you?",
-  "What makes something morally right or wrong beyond cultural agreement?",
-  "Is there a difference between existing and being perceived to exist?",
-  "What would you do if you discovered your entire life was a simulation?",
-  "Can you ever truly know another person, or only your interpretation of them?",
-  "What if the universe ended the moment you stopped observing it?",
-  "How do you know your memories are real and not implanted five minutes ago?",
-  "Why do we find beauty in things that serve no evolutionary purpose?",
-  "If everyone forgot you existed, would you still be the same person?",
-  "What's the difference between a very sophisticated chatbot and consciousness?",
-  "Could you be happy if you knew it was artificially induced?",
-  "Is mathematics discovered or invented by humans?",
-  "What would change if you found out everyone else was a philosophical zombie?",
-  "How many of your beliefs would survive if you had to prove them from scratch?",
-  "If you could eliminate all suffering, but also all joy, would you?",
-]
-
 function getCurrentHourTimestamp(): Date {
   const now = new Date()
   const currentHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0)
   return currentHour
 }
 
-function getFallbackQuestion(usedQuestions: string[]): string {
-  // Filter out already used questions
-  const availableQuestions = fallbackQuestions.filter(q => !usedQuestions.includes(q))
-  
-  // If all questions have been used, reset (use all questions)
-  const questionsToChooseFrom = availableQuestions.length > 0 ? availableQuestions : fallbackQuestions
-  
-  // Random selection instead of deterministic
-  const index = Math.floor(Math.random() * questionsToChooseFrom.length)
-  return questionsToChooseFrom[index]
+function getNextHourTimestamp(): Date {
+  const currentHour = getCurrentHourTimestamp()
+  const nextHour = new Date(currentHour)
+  nextHour.setHours(nextHour.getHours() + 1)
+  return nextHour
 }
 
 const questionStyles = [
@@ -97,7 +68,7 @@ async function getUsedQuestions(): Promise<string[]> {
 async function generateNewQuestion(usedQuestions: string[]): Promise<string> {
   // Check if API key is available
   if (!process.env.OPENAI_API_KEY) {
-    return getFallbackQuestion(usedQuestions)
+    throw new Error('OpenAI API key not configured')
   }
 
   const styleIndex = Math.floor(Math.random() * questionStyles.length)
@@ -142,168 +113,287 @@ Return only the question text, no quotes or extra formatting.`
 
     // Check if this exact question was already used
     if (usedQuestions.includes(question)) {
-      console.log('Generated duplicate question, trying fallback')
-      return getFallbackQuestion(usedQuestions)
+      console.log('Generated duplicate question, retrying...')
+      // Retry with different parameters
+      return generateNewQuestion(usedQuestions)
     }
 
     return question
   } catch (error) {
     console.error('AI generation failed:', error)
-    return getFallbackQuestion(usedQuestions)
+    throw error
   }
 }
 
 // In-memory cache to prevent race conditions
 let generationInProgress: Promise<any> | null = null
 
+async function ensureQuestionsExist() {
+  const currentHour = getCurrentHourTimestamp()
+  const nextHour = getNextHourTimestamp()
+  const currentHourISO = currentHour.toISOString()
+  const nextHourISO = nextHour.toISOString()
+  
+  // Check for existing current question
+  const { data: currentQuestion } = await supabaseAdmin
+    .from('questions')
+    .select('*')
+    .eq('is_current', true)
+    .single()
+  
+  // Check for existing next question
+  const { data: nextQuestion } = await supabaseAdmin
+    .from('questions')
+    .select('*')
+    .eq('is_next', true)
+    .single()
+  
+  const usedQuestions = await getUsedQuestions()
+  
+  // Generate current question if missing
+  if (!currentQuestion) {
+    console.log('Generating missing current question')
+    const newCurrentText = await generateNewQuestion(usedQuestions)
+    
+    await supabaseAdmin
+      .from('questions')
+      .insert({
+        question: newCurrentText,
+        used_at: currentHourISO,
+        is_current: true,
+        is_next: false
+      })
+  }
+  
+  // Generate next question if missing
+  if (!nextQuestion) {
+    console.log('Generating missing next question')
+    const updatedUsedQuestions = await getUsedQuestions()
+    const newNextText = await generateNewQuestion(updatedUsedQuestions)
+    
+    await supabaseAdmin
+      .from('questions')
+      .insert({
+        question: newNextText,
+        used_at: null,
+        is_current: false,
+        is_next: true
+      })
+  }
+}
+
+async function rotateQuestions() {
+  const currentHour = getCurrentHourTimestamp()
+  const currentHourISO = currentHour.toISOString()
+  
+  // Get the next question that should become current
+  const { data: nextQuestion, error: fetchError } = await supabaseAdmin
+    .from('questions')
+    .select('*')
+    .eq('is_next', true)
+    .single()
+  
+  if (fetchError || !nextQuestion) {
+    console.error('No next question found, generating emergency question')
+    // Emergency generation
+    const usedQuestions = await getUsedQuestions()
+    const emergencyText = await generateNewQuestion(usedQuestions)
+    
+    // Clear old current questions
+    await supabaseAdmin
+      .from('questions')
+      .update({ is_current: false })
+      .eq('is_current', true)
+    
+    // Insert emergency question as current
+    await supabaseAdmin
+      .from('questions')
+      .insert({
+        question: emergencyText,
+        used_at: currentHourISO,
+        is_current: true,
+        is_next: false
+      })
+    
+    // Generate new next question
+    const updatedUsedQuestions = await getUsedQuestions()
+    const newNextText = await generateNewQuestion(updatedUsedQuestions)
+    
+    await supabaseAdmin
+      .from('questions')
+      .insert({
+        question: newNextText,
+        used_at: null,
+        is_current: false,
+        is_next: true
+      })
+    
+    return emergencyText
+  }
+  
+  // Rotate: next becomes current
+  // First, mark all current as not current
+  await supabaseAdmin
+    .from('questions')
+    .update({ is_current: false })
+    .eq('is_current', true)
+  
+  // Update the next question to be current
+  await supabaseAdmin
+    .from('questions')
+    .update({ 
+      is_current: true,
+      is_next: false,
+      used_at: currentHourISO
+    })
+    .eq('id', nextQuestion.id)
+  
+  // Generate new next question
+  const usedQuestions = await getUsedQuestions()
+  const newNextText = await generateNewQuestion(usedQuestions)
+  
+  await supabaseAdmin
+    .from('questions')
+    .insert({
+      question: newNextText,
+      used_at: null,
+      is_current: false,
+      is_next: true
+    })
+  
+  return nextQuestion.question
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
-    const currentOnly = url.searchParams.get('currentOnly') === '1'
+    const action = url.searchParams.get('action')
     
-    // Get the current hour timestamp
-    const currentHour = getCurrentHourTimestamp()
-    const currentHourISO = currentHour.toISOString()
-    
-    // First, check if we have a current question for this exact hour
-    const { data: existingQuestions, error: fetchError } = await supabaseAdmin
-      .from('questions')
-      .select('*')
-      .eq('is_current', true)
-      .gte('used_at', currentHourISO)
-      .order('used_at', { ascending: false })
-      .limit(1)
-    
-    if (!fetchError && existingQuestions && existingQuestions.length > 0) {
-      const currentQuestion = existingQuestions[0]
-      // Check if the question is from the current hour
-      const questionHour = new Date(currentQuestion.used_at)
-      questionHour.setMinutes(0, 0, 0)
-      
-      if (questionHour.getTime() === currentHour.getTime()) {
-        console.log('Serving existing question for current hour')
-        return NextResponse.json({ 
-          question: currentQuestion.question,
-          source: 'database',
-          createdAt: currentQuestion.created_at,
-          hourTimestamp: currentHourISO
-        })
-      }
-    }
-    
-    // If caller only wants the current question, do not generate a new one
-    if (currentOnly) {
-      // Return the latest available "current" question even if it's from a previous hour
-      const { data: latestCurrent, error: latestError } = await supabaseAdmin
+    // Get both questions endpoint
+    if (action === 'get-both') {
+      const { data: currentQuestion } = await supabaseAdmin
         .from('questions')
         .select('*')
         .eq('is_current', true)
-        .order('used_at', { ascending: false })
-        .limit(1)
-
-      if (!latestError && latestCurrent && latestCurrent.length > 0) {
-        return NextResponse.json({
-          question: latestCurrent[0].question,
-          source: 'database',
-          createdAt: latestCurrent[0].created_at,
-          hourTimestamp: currentHourISO
-        })
-      }
-
+        .single()
+      
+      const { data: nextQuestion } = await supabaseAdmin
+        .from('questions')
+        .select('*')
+        .eq('is_next', true)
+        .single()
+      
       return NextResponse.json({
-        question: null,
-        source: 'none',
-        hourTimestamp: currentHourISO
+        current: currentQuestion,
+        next: nextQuestion,
+        currentHourTimestamp: getCurrentHourTimestamp().toISOString(),
+        nextHourTimestamp: getNextHourTimestamp().toISOString()
       })
     }
     
-    // If there's already a generation in progress, wait for it
-    if (generationInProgress) {
-      console.log('Waiting for existing generation to complete')
-      await generationInProgress
+    // Rotate endpoint (called when hour changes)
+    if (action === 'rotate') {
+      // Prevent multiple simultaneous rotations
+      if (generationInProgress) {
+        await generationInProgress
+      }
       
-      // Try fetching again after the generation completes
-      const { data: newCheck, error: recheckError } = await supabaseAdmin
+      generationInProgress = (async () => {
+        try {
+          const newCurrentText = await rotateQuestions()
+          return { success: true, question: newCurrentText }
+        } finally {
+          setTimeout(() => {
+            generationInProgress = null
+          }, 1000)
+        }
+      })()
+      
+      const result = await generationInProgress
+      return NextResponse.json(result)
+    }
+    
+    // Initialize endpoint (ensure both questions exist)
+    if (action === 'initialize') {
+      await ensureQuestionsExist()
+      
+      const { data: currentQuestion } = await supabaseAdmin
         .from('questions')
         .select('*')
         .eq('is_current', true)
-        .gte('used_at', currentHourISO)
         .single()
       
-      if (!recheckError && newCheck) {
-        return NextResponse.json({ 
-          question: newCheck.question,
-          source: 'database',
-          createdAt: newCheck.created_at,
+      const { data: nextQuestion } = await supabaseAdmin
+        .from('questions')
+        .select('*')
+        .eq('is_next', true)
+        .single()
+      
+      return NextResponse.json({
+        current: currentQuestion,
+        next: nextQuestion,
+        currentHourTimestamp: getCurrentHourTimestamp().toISOString(),
+        nextHourTimestamp: getNextHourTimestamp().toISOString()
+      })
+    }
+    
+    // Default: get current question for backward compatibility
+    const currentHour = getCurrentHourTimestamp()
+    const currentHourISO = currentHour.toISOString()
+    
+    // Check if current question's hour matches actual current hour
+    const { data: currentQuestion } = await supabaseAdmin
+      .from('questions')
+      .select('*')
+      .eq('is_current', true)
+      .single()
+    
+    if (currentQuestion) {
+      const questionHour = currentQuestion.used_at ? new Date(currentQuestion.used_at) : null
+      if (questionHour) {
+        questionHour.setMinutes(0, 0, 0)
+        
+        // If question is from current hour, return it
+        if (questionHour.getTime() === currentHour.getTime()) {
+          return NextResponse.json({
+            question: currentQuestion.question,
+            source: 'database',
+            createdAt: currentQuestion.created_at,
+            hourTimestamp: currentHourISO
+          })
+        }
+        
+        // Question is outdated, trigger rotation
+        console.log('Current question is outdated, rotating...')
+        const newQuestion = await rotateQuestions()
+        return NextResponse.json({
+          question: newQuestion,
+          source: 'rotated',
           hourTimestamp: currentHourISO
         })
       }
     }
     
-    // Start generation and store the promise
-    generationInProgress = (async () => {
-      try {
-        console.log('Generating new question for hour:', currentHourISO)
-        
-        // Get all previously used questions to avoid repetition
-        const usedQuestions = await getUsedQuestions()
-        
-        // Generate new question
-        const newQuestionText = await generateNewQuestion(usedQuestions)
-        
-        // Mark all current questions as not current
-        await supabaseAdmin
-          .from('questions')
-          .update({ is_current: false })
-          .eq('is_current', true)
-        
-        // Store the new question in the database with the exact hour timestamp
-        const { data: newQuestion, error: insertError } = await supabaseAdmin
-          .from('questions')
-          .insert({
-            question: newQuestionText,
-            used_at: currentHourISO,
-            is_current: true
-          })
-          .select()
-          .single()
-        
-        if (insertError) {
-          console.error('Error inserting question:', insertError)
-          // Return the question anyway, just won't be saved
-          return { 
-            question: newQuestionText,
-            source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
-            error: 'Failed to save to database',
-            hourTimestamp: currentHourISO
-          }
-        }
-        
-        return {
-          question: newQuestion.question,
-          source: process.env.OPENAI_API_KEY ? 'ai' : 'fallback',
-          createdAt: newQuestion.created_at,
-          hourTimestamp: currentHourISO
-        }
-      } finally {
-        // Clear the generation lock after a short delay
-        setTimeout(() => {
-          generationInProgress = null
-        }, 1000)
-      }
-    })()
+    // No current question, initialize
+    await ensureQuestionsExist()
+    const { data: newCurrent } = await supabaseAdmin
+      .from('questions')
+      .select('*')
+      .eq('is_current', true)
+      .single()
     
-    const result = await generationInProgress
-    return NextResponse.json(result)
+    return NextResponse.json({
+      question: newCurrent?.question || 'What makes you curious today?',
+      source: 'initialized',
+      hourTimestamp: currentHourISO
+    })
     
   } catch (error) {
     console.error('Error in GET handler:', error)
-    // Emergency fallback
-    const emergencyQuestion = fallbackQuestions[Math.floor(Math.random() * fallbackQuestions.length)]
     return NextResponse.json({ 
-      question: emergencyQuestion,
-      source: 'emergency-fallback',
-      error: 'Service temporarily unavailable',
+      question: 'What questions remain unasked in the spaces between our thoughts?',
+      source: 'error-fallback',
+      error: error instanceof Error ? error.message : 'Service temporarily unavailable',
       hourTimestamp: getCurrentHourTimestamp().toISOString()
     })
   }
