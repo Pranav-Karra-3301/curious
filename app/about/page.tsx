@@ -66,10 +66,16 @@ export default function AboutPage() {
             </p>
 
             <p>
-              that conversation inspired me to make this site. it's a simple mental gym - just one curious question 
-              every hour, forever. no algorithms, no personalization, no engagement metrics. everyone sees the same 
-              question at the same time. just something to think about while you're waiting for the coffee to brew 
-              or sitting on the train.
+              that conversation inspired me to make this site. it's a simple mental gym - but instead of hourly questions, 
+              i decided to make it daily, like wordle. one curious question every day at midnight EST, forever. 
+              this gives everyone more time to really think about each question, and it means the site can run 
+              sustainably without burning through resources.
+            </p>
+            
+            <p>
+              no algorithms, no personalization, no engagement metrics. everyone sees the same question at the same 
+              time, worldwide. just something to ponder throughout your day - during your morning coffee, on your 
+              commute, or before bed. come back tomorrow for a completely new thought to explore.
             </p>
 
             <p className="text-sm" style={{ color: "var(--color-muted-brown)" }}>
@@ -85,6 +91,13 @@ export default function AboutPage() {
 
         {/* Footer links */}
         <div className="flex justify-center gap-6 text-sm">
+          <Link
+            href="/past-questions"
+            className="underline hover:no-underline transition-all"
+            style={{ color: "var(--color-muted-brown)" }}
+          >
+            past questions
+          </Link>
           <a
             href="https://github.com/Pranav-Karra-3301/curious"
             target="_blank"

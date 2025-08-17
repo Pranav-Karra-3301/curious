@@ -4,11 +4,13 @@ CREATE TABLE IF NOT EXISTS questions (
   question TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   used_at TIMESTAMP WITH TIME ZONE,
-  is_current BOOLEAN DEFAULT FALSE
+  is_current BOOLEAN DEFAULT FALSE,
+  is_next BOOLEAN DEFAULT FALSE
 );
 
 -- Create index for faster queries
 CREATE INDEX idx_questions_is_current ON questions(is_current);
+CREATE INDEX idx_questions_is_next ON questions(is_next);
 CREATE INDEX idx_questions_used_at ON questions(used_at);
 CREATE INDEX idx_questions_created_at ON questions(created_at);
 

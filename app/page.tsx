@@ -236,7 +236,7 @@ export default function QuestionSite() {
             if (data.next) {
               setNextQuestion({
                 text: data.next.question,
-                timestamp: new Date(data.nextHourTimestamp).getTime()
+                timestamp: new Date(data.nextDayTimestamp || data.nextHourTimestamp).getTime()
               })
             }
           })
@@ -395,6 +395,14 @@ export default function QuestionSite() {
             style={{ color: "var(--color-muted-brown)" }}
           >
             what is this
+          </Link>
+          <span className="text-xs" style={{ color: "var(--color-muted-brown)" }}>·</span>
+          <Link
+            href="/past-questions"
+            className="text-xs underline hover:no-underline transition-all duration-200"
+            style={{ color: "var(--color-muted-brown)" }}
+          >
+            past questions
           </Link>
           <span className="text-xs" style={{ color: "var(--color-muted-brown)" }}>·</span>
           <a

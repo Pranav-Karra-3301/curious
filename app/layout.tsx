@@ -14,7 +14,7 @@ const ubuntu = Ubuntu({
 
 export const metadata: Metadata = {
   title: "Something to think about",
-  description: "Hourly questions to spark critical thinking",
+  description: "Daily questions to spark critical thinking - like Wordle for your thoughts",
   metadataBase: new URL('https://curious.pranavkarra.me'),
   icons: {
     icon: "/logo.png",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Something to think about",
-    description: "Hourly questions to spark critical thinking",
+    description: "Daily questions to spark critical thinking - like Wordle for your thoughts",
     url: "https://curious.pranavkarra.me",
     siteName: "Curious",
     images: [
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
         url: "/api/og",
         width: 1200,
         height: 630,
-        alt: "Current thought-provoking question",
+        alt: "Today's thought-provoking question",
       },
     ],
     locale: "en_US",
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Something to think about",
-    description: "Hourly questions to spark critical thinking",
+    description: "Daily questions to spark critical thinking - like Wordle for your thoughts",
     images: ["/api/og"],
   },
 }
