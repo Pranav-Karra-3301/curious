@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { supabase } from "@/lib/supabase"
 
 interface PastQuestion {
   id: string
@@ -21,18 +20,17 @@ export default function PastQuestionsPage() {
 
   const fetchPastQuestions = async () => {
     try {
-      const { data, error } = await supabase
-        .from('questions')
-        .select('id, question, used_at')
-        .not('used_at', 'is', null)
-        .eq('is_current', false)
-        .order('used_at', { ascending: false })
+      const response = await fetch('/api/past-questions', {
+        method: 'GET',
+        cache: 'no-cache'
+      })
 
-      if (error) {
-        throw error
+      if (!response.ok) {
+        throw new Error('Failed to fetch past questions')
       }
 
-      setQuestions(data || [])
+      const data = await response.json()
+      setQuestions(data.questions || [])
     } catch (err) {
       console.error('Error fetching past questions:', err)
       setError('Failed to load past questions')
