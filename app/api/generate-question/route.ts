@@ -7,17 +7,33 @@ import { supabaseAdmin } from '@/lib/supabase'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-function getCurrentHourTimestamp(): Date {
+function getCurrentDayTimestampEST(): Date {
+  // Get current time in EST
   const now = new Date()
-  const currentHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0)
-  return currentHour
+  const estOffset = -5 // EST is UTC-5 (we'll handle DST later if needed)
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000)
+  const estTime = new Date(utc + (3600000 * estOffset))
+  
+  // Set to midnight EST for the current day
+  const currentDay = new Date(estTime.getFullYear(), estTime.getMonth(), estTime.getDate(), 0, 0, 0, 0)
+  return currentDay
 }
 
-function getNextHourTimestamp(): Date {
-  const currentHour = getCurrentHourTimestamp()
-  const nextHour = new Date(currentHour)
-  nextHour.setHours(nextHour.getHours() + 1)
-  return nextHour
+function getNextDayTimestampEST(): Date {
+  const currentDay = getCurrentDayTimestampEST()
+  const nextDay = new Date(currentDay)
+  nextDay.setDate(nextDay.getDate() + 1)
+  return nextDay
+}
+
+function getTimeUntilNextDayEST(): number {
+  const now = new Date()
+  const estOffset = -5 // EST is UTC-5
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000)
+  const estTime = new Date(utc + (3600000 * estOffset))
+  
+  const nextDay = getNextDayTimestampEST()
+  return nextDay.getTime() - estTime.getTime()
 }
 
 const questionStyles = [
@@ -30,7 +46,12 @@ const questionStyles = [
   "technological",
   "personal",
   "abstract",
-  "practical"
+  "practical",
+  "humorous",
+  "whimsical",
+  "hypothetical",
+  "introspective",
+  "paradoxical"
 ]
 
 const questionTopics = [
@@ -43,7 +64,17 @@ const questionTopics = [
   "technology and humanity",
   "purpose and meaning",
   "free will and determinism",
-  "love and relationships"
+  "love and relationships",
+  "creativity and imagination",
+  "happiness and fulfillment",
+  "memory and nostalgia",
+  "dreams and aspirations",
+  "humor and absurdity",
+  "everyday life mysteries",
+  "human quirks and habits",
+  "nature and existence",
+  "communication and language",
+  "childhood and growing up"
 ]
 
 async function getUsedQuestions(): Promise<string[]> {
@@ -79,6 +110,18 @@ async function generateNewQuestion(usedQuestions: string[]): Promise<string> {
   // Format used questions for the prompt
   const usedQuestionsList = usedQuestions.slice(-20).join('\n- ')
 
+  // Add variety to the prompt based on style
+  const stylePrompts = {
+    humorous: "Make it genuinely funny or absurd while still thought-provoking",
+    whimsical: "Make it playful and imaginative",
+    hypothetical: "Create an interesting 'what if' scenario",
+    introspective: "Focus on personal self-reflection",
+    paradoxical: "Include an apparent contradiction that makes sense",
+    default: "Challenge assumptions or spark deep reflection"
+  }
+  
+  const styleGuidance = stylePrompts[style as keyof typeof stylePrompts] || stylePrompts.default
+  
   try {
     const { text } = await generateText({
       model: openai('gpt-5-nano-2025-08-07'),
@@ -87,19 +130,20 @@ async function generateNewQuestion(usedQuestions: string[]): Promise<string> {
       
 The question should:
 - Be unique and not commonly asked
-- Challenge assumptions or spark deep reflection
+- ${styleGuidance}
 - Be between 10-30 words
-- Not be a yes/no question
+- Not be a yes/no question unless it's rhetorical
 - Feel fresh and unexpected
 - Be DIFFERENT from these recently used questions:
 ${usedQuestionsList ? `- ${usedQuestionsList}` : '(no previous questions)'}
 
-Examples of good questions:
-- "If all your memories were fiction, would your identity still be real?"
-- "Why do we trust our future selves to honor our current decisions?"
-- "Does a thought exist before you think it, or only while thinking?"
-- "What separates a deeply held belief from a comfortable delusion?"
-- "If nobody remembered your kindness, would it still have happened?"
+Examples of good questions by style:
+Philosophical: "If all your memories were fiction, would your identity still be real?"
+Humorous: "Why do we park in driveways but drive on parkways?"
+Whimsical: "If colors had personalities, which one would throw the best parties?"
+Hypothetical: "What if gravity only worked when you were paying attention to it?"
+Introspective: "What lie do you tell yourself most often, and why do you believe it?"
+Paradoxical: "Can you truly miss something you never knew existed?"
 
 Return only the question text, no quotes or extra formatting.`
     })
@@ -129,10 +173,10 @@ Return only the question text, no quotes or extra formatting.`
 let generationInProgress: Promise<any> | null = null
 
 async function ensureQuestionsExist() {
-  const currentHour = getCurrentHourTimestamp()
-  const nextHour = getNextHourTimestamp()
-  const currentHourISO = currentHour.toISOString()
-  const nextHourISO = nextHour.toISOString()
+  const currentDay = getCurrentDayTimestampEST()
+  const nextDay = getNextDayTimestampEST()
+  const currentDayISO = currentDay.toISOString()
+  const nextDayISO = nextDay.toISOString()
   
   // Check for existing current question
   const { data: currentQuestion } = await supabaseAdmin
@@ -152,14 +196,14 @@ async function ensureQuestionsExist() {
   
   // Generate current question if missing
   if (!currentQuestion) {
-    console.log('Generating missing current question')
+    console.log('Generating missing current question for today')
     const newCurrentText = await generateNewQuestion(usedQuestions)
     
     await supabaseAdmin
       .from('questions')
       .insert({
         question: newCurrentText,
-        used_at: currentHourISO,
+        used_at: currentDayISO,
         is_current: true,
         is_next: false
       })
@@ -167,7 +211,7 @@ async function ensureQuestionsExist() {
   
   // Generate next question if missing
   if (!nextQuestion) {
-    console.log('Generating missing next question')
+    console.log('Generating missing next question for tomorrow')
     const updatedUsedQuestions = await getUsedQuestions()
     const newNextText = await generateNewQuestion(updatedUsedQuestions)
     
@@ -183,8 +227,8 @@ async function ensureQuestionsExist() {
 }
 
 async function rotateQuestions() {
-  const currentHour = getCurrentHourTimestamp()
-  const currentHourISO = currentHour.toISOString()
+  const currentDay = getCurrentDayTimestampEST()
+  const currentDayISO = currentDay.toISOString()
   
   // Get the next question that should become current
   const { data: nextQuestion, error: fetchError } = await supabaseAdmin
@@ -210,7 +254,7 @@ async function rotateQuestions() {
       .from('questions')
       .insert({
         question: emergencyText,
-        used_at: currentHourISO,
+        used_at: currentDayISO,
         is_current: true,
         is_next: false
       })
@@ -244,7 +288,7 @@ async function rotateQuestions() {
     .update({ 
       is_current: true,
       is_next: false,
-      used_at: currentHourISO
+      used_at: currentDayISO
     })
     .eq('id', nextQuestion.id)
   
@@ -286,8 +330,8 @@ export async function GET(request: Request) {
       return NextResponse.json({
         current: currentQuestion,
         next: nextQuestion,
-        currentHourTimestamp: getCurrentHourTimestamp().toISOString(),
-        nextHourTimestamp: getNextHourTimestamp().toISOString()
+        currentDayTimestamp: getCurrentDayTimestampEST().toISOString(),
+        nextDayTimestamp: getNextDayTimestampEST().toISOString()
       })
     }
     
@@ -332,16 +376,16 @@ export async function GET(request: Request) {
       return NextResponse.json({
         current: currentQuestion,
         next: nextQuestion,
-        currentHourTimestamp: getCurrentHourTimestamp().toISOString(),
-        nextHourTimestamp: getNextHourTimestamp().toISOString()
+        currentDayTimestamp: getCurrentDayTimestampEST().toISOString(),
+        nextDayTimestamp: getNextDayTimestampEST().toISOString()
       })
     }
     
     // Default: get current question for backward compatibility
-    const currentHour = getCurrentHourTimestamp()
-    const currentHourISO = currentHour.toISOString()
+    const currentDay = getCurrentDayTimestampEST()
+    const currentDayISO = currentDay.toISOString()
     
-    // Check if current question's hour matches actual current hour
+    // Check if current question's day matches actual current day
     const { data: currentQuestion } = await supabaseAdmin
       .from('questions')
       .select('*')
@@ -349,17 +393,18 @@ export async function GET(request: Request) {
       .single()
     
     if (currentQuestion) {
-      const questionHour = currentQuestion.used_at ? new Date(currentQuestion.used_at) : null
-      if (questionHour) {
-        questionHour.setMinutes(0, 0, 0)
+      const questionDay = currentQuestion.used_at ? new Date(currentQuestion.used_at) : null
+      if (questionDay) {
+        // Check if it's the same day in EST
+        const questionDayEST = new Date(questionDay.getFullYear(), questionDay.getMonth(), questionDay.getDate(), 0, 0, 0, 0)
         
-        // If question is from current hour, return it
-        if (questionHour.getTime() === currentHour.getTime()) {
+        // If question is from current day, return it
+        if (questionDayEST.getTime() === currentDay.getTime()) {
           return NextResponse.json({
             question: currentQuestion.question,
             source: 'database',
             createdAt: currentQuestion.created_at,
-            hourTimestamp: currentHourISO
+            dayTimestamp: currentDayISO
           })
         }
         
@@ -369,7 +414,7 @@ export async function GET(request: Request) {
         return NextResponse.json({
           question: newQuestion,
           source: 'rotated',
-          hourTimestamp: currentHourISO
+          dayTimestamp: currentDayISO
         })
       }
     }
@@ -385,7 +430,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       question: newCurrent?.question || 'What makes you curious today?',
       source: 'initialized',
-      hourTimestamp: currentHourISO
+      dayTimestamp: currentDayISO
     })
     
   } catch (error) {
@@ -394,7 +439,7 @@ export async function GET(request: Request) {
       question: 'What questions remain unasked in the spaces between our thoughts?',
       source: 'error-fallback',
       error: error instanceof Error ? error.message : 'Service temporarily unavailable',
-      hourTimestamp: getCurrentHourTimestamp().toISOString()
+      dayTimestamp: getCurrentDayTimestampEST().toISOString()
     })
   }
 }
