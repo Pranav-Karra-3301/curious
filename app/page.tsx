@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
+import { toZonedTime } from 'date-fns-tz'
 
 interface Question {
   text: string
@@ -25,8 +26,8 @@ export default function QuestionSite() {
   const getCurrentDayTimestampEST = () => {
     // Get current time in Eastern Time (handles EST/EDT automatically)
     const now = new Date()
-    const easternTimeStr = now.toLocaleString("en-US", { timeZone: "America/New_York" })
-    const easternTime = new Date(easternTimeStr)
+    const timeZone = 'America/New_York'
+    const easternTime = toZonedTime(now, timeZone)
     
     const currentDay = new Date(easternTime.getFullYear(), easternTime.getMonth(), easternTime.getDate(), 0, 0, 0, 0)
     return currentDay.getTime()
@@ -35,8 +36,8 @@ export default function QuestionSite() {
   const getTimeUntilNextDayEST = () => {
     // Get current time in Eastern Time (handles EST/EDT automatically)
     const now = new Date()
-    const easternTimeStr = now.toLocaleString("en-US", { timeZone: "America/New_York" })
-    const easternTime = new Date(easternTimeStr)
+    const timeZone = 'America/New_York'
+    const easternTime = toZonedTime(now, timeZone)
     
     const tomorrow = new Date(easternTime)
     tomorrow.setDate(tomorrow.getDate() + 1)
