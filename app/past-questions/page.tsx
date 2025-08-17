@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { supabase } from "@/lib/supabase"
 
 interface PastQuestion {
   id: string
@@ -21,18 +20,17 @@ export default function PastQuestionsPage() {
 
   const fetchPastQuestions = async () => {
     try {
-      const { data, error } = await supabase
-        .from('questions')
-        .select('id, question, used_at')
-        .not('used_at', 'is', null)
-        .eq('is_current', false)
-        .order('used_at', { ascending: false })
+      const response = await fetch('/api/past-questions', {
+        method: 'GET',
+        cache: 'no-cache'
+      })
 
-      if (error) {
-        throw error
+      if (!response.ok) {
+        throw new Error('Failed to fetch past questions')
       }
 
-      setQuestions(data || [])
+      const data = await response.json()
+      setQuestions(data.questions || [])
     } catch (err) {
       console.error('Error fetching past questions:', err)
       setError('Failed to load past questions')
@@ -43,18 +41,16 @@ export default function PastQuestionsPage() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    const estOffset = -5 // EST is UTC-5
-    const utc = date.getTime() + (date.getTimezoneOffset() * 60000)
-    const estDate = new Date(utc + (3600000 * estOffset))
     
     const options: Intl.DateTimeFormatOptions = {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'America/New_York'
     }
     
-    return estDate.toLocaleDateString('en-US', options)
+    return date.toLocaleDateString('en-US', options)
   }
 
   const groupQuestionsByMonth = (questions: PastQuestion[]) => {
@@ -62,7 +58,12 @@ export default function PastQuestionsPage() {
     
     questions.forEach(q => {
       const date = new Date(q.used_at)
-      const monthYear = `${date.toLocaleString('default', { month: 'long' })} ${date.getFullYear()}`
+      // Use Eastern Time for consistent grouping
+      const monthYear = date.toLocaleString('en-US', { 
+        month: 'long', 
+        year: 'numeric',
+        timeZone: 'America/New_York'
+      })
       
       if (!grouped[monthYear]) {
         grouped[monthYear] = []

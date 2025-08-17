@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
+import { toZonedTime } from 'date-fns-tz'
 
 interface Question {
   text: string
@@ -17,22 +18,43 @@ export default function QuestionSite() {
   const [timeUntilNext, setTimeUntilNext] = useState("")
   const [showCursor, setShowCursor] = useState(true)
   const [showProgressBars, setShowProgressBars] = useState(false)
-  const [lastRotationHour, setLastRotationHour] = useState<number | null>(null)
+  const [lastRotationDay, setLastRotationDay] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadingMessage, setLoadingMessage] = useState("getting today's question")
   const rotationInProgressRef = useRef(false)
 
-  const getCurrentHourTimestamp = () => {
+  const getCurrentDayTimestampEST = () => {
+    // Get current time in Eastern Time (handles EST/EDT automatically)
     const now = new Date()
-    const currentHour = new Date(now)
-    currentHour.setMinutes(0, 0, 0)
-    return currentHour.getTime()
+    const timeZone = 'America/New_York'
+    const easternTime = toZonedTime(now, timeZone)
+    
+    const currentDay = new Date(easternTime.getFullYear(), easternTime.getMonth(), easternTime.getDate(), 0, 0, 0, 0)
+    return currentDay.getTime()
   }
 
-  const getTimeUntilNextHour = () => {
+  const getTimeUntilNextDayEST = () => {
+    // Get current time in Eastern Time (handles EST/EDT automatically)
     const now = new Date()
-    const nextHour = new Date(now)
-    nextHour.setHours(now.getHours() + 1, 0, 0, 0)
-    return nextHour.getTime() - now.getTime()
+    const timeZone = 'America/New_York'
+    const easternTime = toZonedTime(now, timeZone)
+    
+    const tomorrow = new Date(easternTime)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(0, 0, 0, 0)
+    
+    return tomorrow.getTime() - easternTime.getTime()
   }
+  
+  // Loading messages that change every second
+  const loadingMessages = [
+    "getting today's question",
+    "fetching something curious",
+    "loading today's thought",
+    "preparing your daily wonder",
+    "finding today's curiosity",
+    "retrieving today's question"
+  ]
 
   // Initialize questions on mount
   const initializeQuestions = useCallback(async () => {
@@ -51,18 +73,19 @@ export default function QuestionSite() {
       if (data.current) {
         setCurrentQuestion({
           text: data.current.question,
-          timestamp: new Date(data.currentHourTimestamp).getTime()
+          timestamp: new Date(data.currentDayTimestamp || data.currentHourTimestamp).getTime()
         })
       }
       
       if (data.next) {
         setNextQuestion({
           text: data.next.question,
-          timestamp: new Date(data.nextHourTimestamp).getTime()
+          timestamp: new Date(data.nextDayTimestamp || data.nextHourTimestamp).getTime()
         })
       }
       
-      setLastRotationHour(getCurrentHourTimestamp())
+      setLastRotationDay(getCurrentDayTimestampEST())
+      setIsLoading(false)
     } catch (error) {
       console.error('Error initializing questions:', error)
       // Retry in 5 seconds
@@ -70,12 +93,12 @@ export default function QuestionSite() {
     }
   }, [])
 
-  // Rotate questions when hour changes
+  // Rotate questions when day changes
   const rotateQuestions = useCallback(async () => {
-    const currentHour = getCurrentHourTimestamp()
+    const currentDay = getCurrentDayTimestampEST()
     
     // Prevent duplicate rotations
-    if (rotationInProgressRef.current || lastRotationHour === currentHour) {
+    if (rotationInProgressRef.current || lastRotationDay === currentDay) {
       return
     }
     
@@ -107,7 +130,7 @@ export default function QuestionSite() {
         // Switch to next question
         setCurrentQuestion({
           text: nextQuestion.text,
-          timestamp: currentHour
+          timestamp: currentDay
         })
         setNextQuestion(null)
       }
@@ -139,7 +162,7 @@ export default function QuestionSite() {
         }
       }
       
-      setLastRotationHour(currentHour)
+      setLastRotationDay(currentDay)
     } catch (error) {
       console.error('Error rotating questions:', error)
       // Try fetching both questions as fallback
@@ -155,14 +178,14 @@ export default function QuestionSite() {
           if (data.current) {
             setCurrentQuestion({
               text: data.current.question,
-              timestamp: new Date(data.currentHourTimestamp).getTime()
+              timestamp: new Date(data.currentDayTimestamp || data.currentHourTimestamp).getTime()
             })
           }
           
           if (data.next) {
             setNextQuestion({
               text: data.next.question,
-              timestamp: new Date(data.nextHourTimestamp).getTime()
+              timestamp: new Date(data.nextDayTimestamp || data.nextHourTimestamp).getTime()
             })
           }
         }
@@ -172,11 +195,11 @@ export default function QuestionSite() {
     } finally {
       rotationInProgressRef.current = false
     }
-  }, [nextQuestion, displayedText, lastRotationHour])
+  }, [nextQuestion, displayedText, lastRotationDay])
 
   // Typing animation effect
   useEffect(() => {
-    if (!currentQuestion || isUntyping) return
+    if (!currentQuestion || isUntyping || isLoading) return
 
     setIsTyping(true)
     setDisplayedText("")
@@ -195,7 +218,7 @@ export default function QuestionSite() {
     }, 50) // 50ms per character for smooth typing
 
     return () => clearInterval(typeInterval)
-  }, [currentQuestion, isUntyping])
+  }, [currentQuestion, isUntyping, isLoading])
 
   // Cursor blink effect
   useEffect(() => {
@@ -206,23 +229,42 @@ export default function QuestionSite() {
     return () => clearInterval(blinkInterval)
   }, [])
 
+  // Loading message rotation
+  useEffect(() => {
+    if (!isLoading) return
+    
+    let messageIndex = 0
+    const interval = setInterval(() => {
+      messageIndex = (messageIndex + 1) % loadingMessages.length
+      setLoadingMessage(loadingMessages[messageIndex])
+    }, 1000)
+    
+    return () => clearInterval(interval)
+  }, [isLoading])
+
   // Timer and rotation logic
   useEffect(() => {
     let timer: NodeJS.Timeout
 
     const updateTimer = () => {
-      const timeLeft = getTimeUntilNextHour()
-      const currentHour = getCurrentHourTimestamp()
+      const timeLeft = getTimeUntilNextDayEST()
+      const currentDay = getCurrentDayTimestampEST()
 
-      // Check if we need to rotate (new hour started)
-      if (lastRotationHour !== null && lastRotationHour !== currentHour) {
+      // Check if we need to rotate (new day started)
+      if (lastRotationDay !== null && lastRotationDay !== currentDay) {
         rotateQuestions()
       }
 
-      // Update countdown
-      const minutes = Math.floor(timeLeft / (60 * 1000))
+      // Update countdown with hours, minutes, and seconds
+      const hours = Math.floor(timeLeft / (60 * 60 * 1000))
+      const minutes = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000))
       const seconds = Math.floor((timeLeft % (60 * 1000)) / 1000)
-      setTimeUntilNext(`${minutes}:${seconds.toString().padStart(2, "0")}`)
+      
+      if (hours > 0) {
+        setTimeUntilNext(`${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`)
+      } else {
+        setTimeUntilNext(`${minutes}:${seconds.toString().padStart(2, "0")}`)
+      }
 
       // Pre-rotation check: ensure we're ready for the next hour
       if (timeLeft <= 5000 && !nextQuestion) {
@@ -256,7 +298,7 @@ export default function QuestionSite() {
     return () => {
       if (timer) clearInterval(timer)
     }
-  }, [currentQuestion, nextQuestion, lastRotationHour, rotateQuestions, initializeQuestions])
+  }, [currentQuestion, nextQuestion, lastRotationDay, rotateQuestions, initializeQuestions])
 
   // Progress bar calculations
   const getYearProgress = () => {
@@ -353,16 +395,16 @@ export default function QuestionSite() {
         <div className="space-y-4">
           <div
             className="text-xl sm:text-2xl md:text-3xl font-bold leading-relaxed min-h-[3rem] sm:min-h-[4rem] flex items-center justify-center px-2"
-            style={{ color: "var(--color-charcoal)" }}
+            style={{ color: isLoading ? "var(--color-muted-brown)" : "var(--color-charcoal)" }}
           >
             <span className="inline-block">
-              {displayedText}
-              {(isTyping || isUntyping || !currentQuestion) && (
+              {isLoading ? loadingMessage : displayedText}
+              {(isTyping || isUntyping || !currentQuestion || isLoading) && (
                 <span
                   className={`ml-1 inline-block w-1 h-6 sm:h-8 rounded-full transition-opacity duration-100 ${
                     showCursor ? "opacity-100" : "opacity-0"
                   }`}
-                  style={{ backgroundColor: "var(--color-dark-brown)" }}
+                  style={{ backgroundColor: isLoading ? "var(--color-soft-brown)" : "var(--color-dark-brown)" }}
                 />
               )}
             </span>
@@ -370,7 +412,7 @@ export default function QuestionSite() {
         </div>
 
         {/* Timer */}
-        {timeUntilNext && (
+        {timeUntilNext && !isLoading && (
           <div className="space-y-2">
             <div className="text-sm font-light tracking-wide" style={{ color: "var(--color-muted-brown)" }}>
               next question in

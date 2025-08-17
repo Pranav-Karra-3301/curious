@@ -2,20 +2,20 @@ import { NextResponse } from 'next/server'
 import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { supabaseAdmin } from '@/lib/supabase'
+import { toZonedTime } from 'date-fns-tz'
 
 // Cache the response to prevent multiple simultaneous generations
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 function getCurrentDayTimestampEST(): Date {
-  // Get current time in EST
+  // Get current time in Eastern Time (handles EST/EDT automatically)
   const now = new Date()
-  const estOffset = -5 // EST is UTC-5 (we'll handle DST later if needed)
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000)
-  const estTime = new Date(utc + (3600000 * estOffset))
+  const timeZone = 'America/New_York'
+  const easternTime = toZonedTime(now, timeZone)
   
-  // Set to midnight EST for the current day
-  const currentDay = new Date(estTime.getFullYear(), estTime.getMonth(), estTime.getDate(), 0, 0, 0, 0)
+  // Set to midnight Eastern Time for the current day
+  const currentDay = new Date(easternTime.getFullYear(), easternTime.getMonth(), easternTime.getDate(), 0, 0, 0, 0)
   return currentDay
 }
 
@@ -27,13 +27,13 @@ function getNextDayTimestampEST(): Date {
 }
 
 function getTimeUntilNextDayEST(): number {
+  // Get current time in Eastern Time (handles EST/EDT automatically)
   const now = new Date()
-  const estOffset = -5 // EST is UTC-5
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000)
-  const estTime = new Date(utc + (3600000 * estOffset))
+  const timeZone = 'America/New_York'
+  const easternTime = toZonedTime(now, timeZone)
   
   const nextDay = getNextDayTimestampEST()
-  return nextDay.getTime() - estTime.getTime()
+  return nextDay.getTime() - easternTime.getTime()
 }
 
 const questionStyles = [
