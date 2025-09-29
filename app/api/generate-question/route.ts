@@ -185,6 +185,49 @@ async function ensureQuestionsExist() {
     .eq('is_current', true)
     .single()
   
+  // Check if current question is stale (more than 24 hours old)
+  if (currentQuestion && currentQuestion.used_at) {
+    const questionDate = new Date(currentQuestion.used_at)
+    const timeZone = 'America/New_York'
+    const questionEST = toZonedTime(questionDate, timeZone)
+    const questionDay = new Date(
+      questionEST.getFullYear(),
+      questionEST.getMonth(),
+      questionEST.getDate(),
+      0, 0, 0, 0
+    )
+    
+    const daysDiff = Math.floor((currentDay.getTime() - questionDay.getTime()) / (1000 * 60 * 60 * 24))
+    if (daysDiff > 0) {
+      console.log('[Safeguard] Current question is', daysDiff, 'days old, forcing rotation')
+      // Force rotation by marking current as not current
+      await supabaseAdmin
+        .from('questions')
+        .update({ is_current: false })
+        .eq('id', currentQuestion.id)
+      
+      // Try to use next question if available
+      const { data: nextQ } = await supabaseAdmin
+        .from('questions')
+        .select('*')
+        .eq('is_next', true)
+        .single()
+      
+      if (nextQ) {
+        await supabaseAdmin
+          .from('questions')
+          .update({ 
+            is_current: true,
+            is_next: false,
+            used_at: currentDayISO
+          })
+          .eq('id', nextQ.id)
+      }
+      
+      return // Re-run ensureQuestionsExist after rotation
+    }
+  }
+  
   // Check for existing next question
   const { data: nextQuestion } = await supabaseAdmin
     .from('questions')
@@ -229,6 +272,8 @@ async function ensureQuestionsExist() {
 async function rotateQuestions() {
   const currentDay = getCurrentDayTimestampEST()
   const currentDayISO = currentDay.toISOString()
+  
+  console.log('[Rotation] Starting rotation for day:', currentDayISO)
   
   // Get the next question that should become current
   const { data: nextQuestion, error: fetchError } = await supabaseAdmin
@@ -277,13 +322,17 @@ async function rotateQuestions() {
   
   // Rotate: next becomes current
   // First, mark all current as not current
-  await supabaseAdmin
+  const { error: clearError } = await supabaseAdmin
     .from('questions')
     .update({ is_current: false })
     .eq('is_current', true)
   
+  if (clearError) {
+    console.error('[Rotation] Failed to clear current question:', clearError)
+  }
+  
   // Update the next question to be current
-  await supabaseAdmin
+  const { error: updateError } = await supabaseAdmin
     .from('questions')
     .update({ 
       is_current: true,
@@ -291,6 +340,13 @@ async function rotateQuestions() {
       used_at: currentDayISO
     })
     .eq('id', nextQuestion.id)
+  
+  if (updateError) {
+    console.error('[Rotation] Failed to update next to current:', updateError)
+    throw updateError
+  }
+  
+  console.log('[Rotation] Successfully rotated question:', nextQuestion.question.substring(0, 50) + '...')
   
   // Generate new next question
   const usedQuestions = await getUsedQuestions()
@@ -395,11 +451,18 @@ export async function GET(request: Request) {
     if (currentQuestion) {
       const questionDay = currentQuestion.used_at ? new Date(currentQuestion.used_at) : null
       if (questionDay) {
-        // Check if it's the same day in EST
-        const questionDayEST = new Date(questionDay.getFullYear(), questionDay.getMonth(), questionDay.getDate(), 0, 0, 0, 0)
+        // Convert question's used_at to EST for comparison
+        const timeZone = 'America/New_York'
+        const questionDayEST = toZonedTime(questionDay, timeZone)
+        const questionDayMidnight = new Date(
+          questionDayEST.getFullYear(), 
+          questionDayEST.getMonth(), 
+          questionDayEST.getDate(), 
+          0, 0, 0, 0
+        )
         
         // If question is from current day, return it
-        if (questionDayEST.getTime() === currentDay.getTime()) {
+        if (questionDayMidnight.getTime() === currentDay.getTime()) {
           return NextResponse.json({
             question: currentQuestion.question,
             source: 'database',
@@ -409,7 +472,9 @@ export async function GET(request: Request) {
         }
         
         // Question is outdated, trigger rotation
-        console.log('Current question is outdated, rotating...')
+        console.log('[Check] Current question is outdated')
+        console.log('[Check] Question day:', questionDayMidnight.toISOString())
+        console.log('[Check] Current day:', currentDay.toISOString())
         const newQuestion = await rotateQuestions()
         return NextResponse.json({
           question: newQuestion,
