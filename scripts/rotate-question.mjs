@@ -10,48 +10,44 @@
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
+import {
+  questionStyles,
+  questionTopics,
+  seasonalThemes,
+  MAX_LOG_LENGTH,
+  OPENAI_MODEL,
+  OPENAI_TEMPERATURE,
+  OPENAI_MAX_TOKENS,
+  QUESTION_MIN_LENGTH,
+  QUESTION_MAX_LENGTH,
+  MAX_RETRY_ATTEMPTS,
+  normalizeForComparison,
+  validateEnvVars,
+  getSupabaseUrl
+} from './lib/question-config.mjs';
 
 // Configuration
 const TIMEZONE = 'America/New_York';
 
+// Validate required environment variables
+validateEnvVars(['SUPABASE_SERVICE_ROLE_KEY', 'OPENAI_API_KEY']);
+
+const supabaseUrl = getSupabaseUrl();
+if (!supabaseUrl) {
+  throw new Error(
+    'Environment variable SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL is required but was not set'
+  );
+}
+
 // Initialize clients
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  supabaseUrl,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-
-// Question generation configuration
-const questionStyles = [
-  "philosophical", "ethical", "scientific", "psychological",
-  "existential", "social", "technological", "personal",
-  "abstract", "practical", "humorous", "whimsical",
-  "hypothetical", "introspective", "paradoxical"
-];
-
-const questionTopics = [
-  "consciousness and identity", "morality and ethics",
-  "reality and perception", "time and mortality",
-  "knowledge and truth", "society and culture",
-  "technology and humanity", "purpose and meaning",
-  "free will and determinism", "love and relationships",
-  "creativity and imagination", "happiness and fulfillment",
-  "memory and nostalgia", "dreams and aspirations",
-  "humor and absurdity", "everyday life mysteries",
-  "human quirks and habits", "nature and existence",
-  "communication and language", "childhood and growing up"
-];
-
-// Seasonal and day-based variations for better randomization
-const seasonalThemes = {
-  winter: ['reflection', 'warmth', 'inner life', 'rest', 'hope'],
-  spring: ['growth', 'renewal', 'beginnings', 'change', 'potential'],
-  summer: ['freedom', 'adventure', 'energy', 'joy', 'exploration'],
-  fall: ['harvest', 'wisdom', 'gratitude', 'transition', 'preparation']
-};
 
 function getSeason(date) {
   const month = date.getMonth();
@@ -99,7 +95,7 @@ async function getUsedQuestions() {
 }
 
 // Generate a new question using OpenAI
-async function generateQuestion(usedQuestions = []) {
+async function generateQuestion(usedQuestions = [], attemptNumber = 0) {
   const now = new Date();
   const season = getSeason(now);
   const dayMood = getDayMood(now.getDay());
@@ -145,10 +141,10 @@ ${!['humorous', 'whimsical', 'hypothetical', 'introspective', 'paradoxical'].inc
 Return ONLY the question text, no quotes or extra formatting.`;
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: OPENAI_MODEL,
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.95,
-    max_tokens: 100
+    temperature: OPENAI_TEMPERATURE,
+    max_tokens: OPENAI_MAX_TOKENS
   });
 
   let question = completion.choices[0].message.content.trim();
@@ -156,15 +152,24 @@ Return ONLY the question text, no quotes or extra formatting.`;
   // Clean up the question
   question = question.replace(/^["']|["']$/g, '').replace(/\?+$/, '?');
 
+  // Normalize for duplicate comparison (case-insensitive, punctuation/whitespace-insensitive)
+  const normalizedQuestion = normalizeForComparison(question);
+  const normalizedUsedQuestions = Array.isArray(usedQuestions)
+    ? usedQuestions.map((q) => normalizeForComparison(q))
+    : [];
+
   // Validate
-  if (question.length < 10 || question.length > 200) {
+  if (question.length < QUESTION_MIN_LENGTH || question.length > QUESTION_MAX_LENGTH) {
     throw new Error(`Invalid question length: ${question.length}`);
   }
 
-  // Check for duplicates
-  if (usedQuestions.includes(question)) {
-    console.log('Generated duplicate, retrying...');
-    return generateQuestion(usedQuestions);
+  // Check for duplicates (using normalized comparison)
+  if (normalizedUsedQuestions.includes(normalizedQuestion)) {
+    if (attemptNumber < MAX_RETRY_ATTEMPTS) {
+      console.log(`Generated duplicate on attempt ${attemptNumber + 1}, retrying...`);
+      return generateQuestion(usedQuestions, attemptNumber + 1);
+    }
+    throw new Error(`Duplicate question after ${attemptNumber} attempts`);
   }
 
   return {
@@ -181,18 +186,26 @@ async function rotateQuestion() {
   console.log(`[Rotation] Starting for ${today}`);
 
   // Step 1: Get the current question
-  const { data: currentQuestion } = await supabase
+  const { data: currentQuestion, error: currentQuestionError } = await supabase
     .from('questions')
     .select('*')
     .eq('is_current', true)
-    .single();
+    .maybeSingle();
+
+  if (currentQuestionError) {
+    throw new Error(`Failed to fetch current question: ${currentQuestionError.message}`);
+  }
 
   // Step 2: Get the next question (should become current)
-  const { data: nextQuestion } = await supabase
+  const { data: nextQuestion, error: nextQuestionError } = await supabase
     .from('questions')
     .select('*')
     .eq('is_next', true)
-    .single();
+    .maybeSingle();
+
+  if (nextQuestionError) {
+    throw new Error(`Failed to fetch next question: ${nextQuestionError.message}`);
+  }
 
   // Step 3: If we have a next question, promote it to current
   if (nextQuestion) {
@@ -202,7 +215,7 @@ async function rotateQuestion() {
         .from('questions')
         .update({ is_current: false })
         .eq('id', currentQuestion.id);
-      console.log(`[Rotation] Archived previous question: "${currentQuestion.question.substring(0, 40)}..."`);
+      console.log(`[Rotation] Archived previous question: "${currentQuestion.question.substring(0, MAX_LOG_LENGTH)}..."`);
     }
 
     // Promote next to current
@@ -219,7 +232,7 @@ async function rotateQuestion() {
       throw new Error(`Failed to promote next question: ${updateError.message}`);
     }
 
-    console.log(`[Rotation] Promoted question: "${nextQuestion.question.substring(0, 40)}..."`);
+    console.log(`[Rotation] Promoted question: "${nextQuestion.question.substring(0, MAX_LOG_LENGTH)}..."`);
   } else {
     console.log('[Rotation] No next question found, generating emergency question...');
 
@@ -246,7 +259,7 @@ async function rotateQuestion() {
       throw new Error(`Failed to insert emergency question: ${insertError.message}`);
     }
 
-    console.log(`[Rotation] Created emergency question: "${newQuestion.text.substring(0, 40)}..."`);
+    console.log(`[Rotation] Created emergency question: "${newQuestion.text.substring(0, MAX_LOG_LENGTH)}..."`);
   }
 
   // Step 4: Generate new next question
@@ -265,10 +278,13 @@ async function rotateQuestion() {
     });
 
   if (nextInsertError) {
-    console.error('[Rotation] Warning: Failed to generate next question:', nextInsertError.message);
-    // Don't throw - rotation succeeded, next gen is secondary
+    console.error('[Rotation] DEGRADED STATE: Failed to insert next (tomorrow\'s) question.');
+    console.error('[Rotation] Next question insert error message:', nextInsertError.message);
+    console.error('[Rotation] Next question insert error details:', JSON.stringify(nextInsertError, null, 2));
+    console.error('[Rotation] Note: Rotation of current question succeeded, but no next question is queued.');
+    // Don't throw - rotation succeeded, next gen is secondary. This is a partial failure for monitoring.
   } else {
-    console.log(`[Rotation] Generated next question: "${tomorrowQuestion.text.substring(0, 40)}..."`);
+    console.log(`[Rotation] Generated next question: "${tomorrowQuestion.text.substring(0, MAX_LOG_LENGTH)}..."`);
   }
 
   console.log('[Rotation] Complete!');

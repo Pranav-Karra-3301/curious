@@ -2,9 +2,9 @@ name: Daily Question Rotation
 
 on:
   schedule:
-    # Run at 5:00 AM UTC = Midnight EST (during standard time)
-    # Note: During EDT (daylight saving), this will be 1 AM EDT
-    # For exact midnight, you'd need 4 AM UTC during EDT
+    # Run at 5:00 AM UTC (approximately midnight US Eastern Time)
+    # Note: During EST (standard time), this is midnight EST
+    # Note: During EDT (daylight saving), this will be 1 AM EDT; for exact midnight then, use 4 AM UTC
     - cron: '0 5 * * *'
   workflow_dispatch: # Allow manual trigger for testing
 

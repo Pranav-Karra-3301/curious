@@ -9,38 +9,42 @@
 
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
+import {
+  questionStyles,
+  questionTopics,
+  MAX_LOG_LENGTH,
+  OPENAI_MODEL,
+  OPENAI_TEMPERATURE,
+  OPENAI_MAX_TOKENS,
+  QUESTION_MIN_LENGTH,
+  QUESTION_MAX_LENGTH,
+  MAX_RETRY_ATTEMPTS,
+  GENERATION_DELAY_MS,
+  normalizeForComparison,
+  validateEnvVars,
+  getSupabaseUrl
+} from './lib/question-config.mjs';
 
 const BUFFER_SIZE = parseInt(process.env.BUFFER_SIZE || '7');
 
+// Validate required environment variables
+validateEnvVars(['SUPABASE_SERVICE_ROLE_KEY', 'OPENAI_API_KEY']);
+
+const supabaseUrl = getSupabaseUrl();
+if (!supabaseUrl) {
+  throw new Error(
+    'Environment variable SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL is required but was not set'
+  );
+}
+
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  supabaseUrl,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-
-// Question configuration (same as rotate script)
-const questionStyles = [
-  "philosophical", "ethical", "scientific", "psychological",
-  "existential", "social", "technological", "personal",
-  "abstract", "practical", "humorous", "whimsical",
-  "hypothetical", "introspective", "paradoxical"
-];
-
-const questionTopics = [
-  "consciousness and identity", "morality and ethics",
-  "reality and perception", "time and mortality",
-  "knowledge and truth", "society and culture",
-  "technology and humanity", "purpose and meaning",
-  "free will and determinism", "love and relationships",
-  "creativity and imagination", "happiness and fulfillment",
-  "memory and nostalgia", "dreams and aspirations",
-  "humor and absurdity", "everyday life mysteries",
-  "human quirks and habits", "nature and existence",
-  "communication and language", "childhood and growing up"
-];
 
 async function getUsedQuestions() {
   const { data } = await supabase
@@ -80,24 +84,30 @@ ${recentQuestionsList ? `AVOID these questions:\n${recentQuestionsList}` : ''}
 Return ONLY the question text.`;
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: OPENAI_MODEL,
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.95,
-    max_tokens: 100
+    temperature: OPENAI_TEMPERATURE,
+    max_tokens: OPENAI_MAX_TOKENS
   });
 
   let question = completion.choices[0].message.content.trim();
   question = question.replace(/^["']|["']$/g, '').replace(/\?+$/, '?');
 
-  if (question.length < 10 || question.length > 200) {
-    if (attemptNumber < 3) {
+  // Normalize for duplicate comparison
+  const normalizedQuestion = normalizeForComparison(question);
+  const normalizedUsedQuestions = Array.isArray(usedQuestions)
+    ? usedQuestions.map((q) => normalizeForComparison(q))
+    : [];
+
+  if (question.length < QUESTION_MIN_LENGTH || question.length > QUESTION_MAX_LENGTH) {
+    if (attemptNumber < MAX_RETRY_ATTEMPTS) {
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
     throw new Error(`Invalid question length after ${attemptNumber} attempts`);
   }
 
-  if (usedQuestions.includes(question)) {
-    if (attemptNumber < 3) {
+  if (normalizedUsedQuestions.includes(normalizedQuestion)) {
+    if (attemptNumber < MAX_RETRY_ATTEMPTS) {
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
     throw new Error(`Duplicate question after ${attemptNumber} attempts`);
@@ -156,10 +166,10 @@ async function generateBuffer() {
       usedQuestions.push(question.text);
       generated++;
 
-      console.log(`[Buffer] Generated: "${question.text.substring(0, 40)}..."`);
+      console.log(`[Buffer] Generated: "${question.text.substring(0, MAX_LOG_LENGTH)}..."`);
 
-      // Small delay between generations to avoid rate limits
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Configurable delay between generations to avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, GENERATION_DELAY_MS));
 
     } catch (error) {
       console.error(`[Buffer] Failed to generate question ${i + 1}:`, error.message);

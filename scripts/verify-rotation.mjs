@@ -8,9 +8,20 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { MAX_LOG_LENGTH, validateEnvVars, getSupabaseUrl } from './lib/question-config.mjs';
+
+// Validate required environment variables
+validateEnvVars(['SUPABASE_SERVICE_ROLE_KEY']);
+
+const supabaseUrl = getSupabaseUrl();
+if (!supabaseUrl) {
+  throw new Error(
+    'Environment variable SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL is required but was not set'
+  );
+}
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  supabaseUrl,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -32,10 +43,10 @@ async function verify() {
   }
 
   if (current.length > 1) {
-    console.warn(`[Verify] Warning: Multiple current questions found (${current.length})`);
+    throw new Error(`Multiple current questions found (${current.length})`);
   }
 
-  console.log(`[Verify] Current question: "${current[0].question.substring(0, 50)}..."`);
+  console.log(`[Verify] Current question: "${current[0].question.substring(0, MAX_LOG_LENGTH)}..."`);
   console.log(`[Verify] Used at: ${current[0].used_at}`);
 
   // Check next question exists
@@ -51,10 +62,10 @@ async function verify() {
   if (!next || next.length === 0) {
     console.warn('[Verify] Warning: No next question found!');
   } else {
-    console.log(`[Verify] Next question ready: "${next[0].question.substring(0, 50)}..."`);
+    console.log(`[Verify] Next question ready: "${next[0].question.substring(0, MAX_LOG_LENGTH)}..."`);
   }
 
-  // Check for any orphaned questions (both current and next)
+  // Check for any orphaned questions (both current OR next - logically impossible but checks data integrity)
   const { data: orphaned } = await supabase
     .from('questions')
     .select('id')
@@ -62,7 +73,7 @@ async function verify() {
     .eq('is_next', true);
 
   if (orphaned && orphaned.length > 0) {
-    console.warn(`[Verify] Warning: Found ${orphaned.length} questions marked as both current and next`);
+    throw new Error(`Found ${orphaned.length} questions marked as both current and next`);
   }
 
   // Count total questions

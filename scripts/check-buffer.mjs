@@ -7,9 +7,20 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { validateEnvVars, getSupabaseUrl } from './lib/question-config.mjs';
+
+// Validate required environment variables
+validateEnvVars(['SUPABASE_SERVICE_ROLE_KEY']);
+
+const supabaseUrl = getSupabaseUrl();
+if (!supabaseUrl) {
+  throw new Error(
+    'Environment variable SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL is required but was not set'
+  );
+}
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  supabaseUrl,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -49,9 +60,12 @@ async function checkBuffer() {
     console.log(`[Buffer Check] Next question ready: NO (will be generated during rotation)`);
   }
 
-  // Output for GitHub Actions
-  console.log(`::set-output name=buffer_count::${bufferCount}`);
-  console.log(`::set-output name=needed::${needed}`);
+  // Output for GitHub Actions using environment files (updated syntax)
+  if (process.env.GITHUB_OUTPUT) {
+    const fs = await import('fs');
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `buffer_count=${bufferCount}\n`);
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `needed=${needed}\n`);
+  }
 
   return { bufferCount, needed };
 }
