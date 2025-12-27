@@ -138,7 +138,7 @@ async function generateBuffer() {
     try {
       console.log(`[Buffer] Generating ${i + 1}/${needed}...`);
 
-      const question = await generateQuestion(usedQuestions, i);
+      const question = await generateQuestion(usedQuestions, 0);
 
       const { error } = await supabase
         .from('questions')

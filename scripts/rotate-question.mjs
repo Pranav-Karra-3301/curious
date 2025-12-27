@@ -99,7 +99,7 @@ async function getUsedQuestions() {
 }
 
 // Generate a new question using OpenAI
-async function generateQuestion(usedQuestions = []) {
+async function generateQuestion(usedQuestions = [], attemptNumber = 0) {
   const now = new Date();
   const season = getSeason(now);
   const dayMood = getDayMood(now.getDay());
@@ -158,13 +158,20 @@ Return ONLY the question text, no quotes or extra formatting.`;
 
   // Validate
   if (question.length < 10 || question.length > 200) {
-    throw new Error(`Invalid question length: ${question.length}`);
+    if (attemptNumber < 3) {
+      console.log(`Invalid question length (${question.length}), retrying... (attempt ${attemptNumber + 1})`);
+      return generateQuestion(usedQuestions, attemptNumber + 1);
+    }
+    throw new Error(`Invalid question length after ${attemptNumber} attempts`);
   }
 
   // Check for duplicates
   if (usedQuestions.includes(question)) {
-    console.log('Generated duplicate, retrying...');
-    return generateQuestion(usedQuestions);
+    if (attemptNumber < 3) {
+      console.log(`Generated duplicate, retrying... (attempt ${attemptNumber + 1})`);
+      return generateQuestion(usedQuestions, attemptNumber + 1);
+    }
+    throw new Error(`Duplicate question after ${attemptNumber} attempts`);
   }
 
   return {
