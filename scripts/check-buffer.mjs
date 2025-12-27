@@ -7,6 +7,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { appendFileSync } from 'fs';
 import { validateEnvVars, getSupabaseUrl } from './lib/question-config.mjs';
 
 // Validate required environment variables
@@ -62,7 +63,6 @@ async function checkBuffer() {
 
   // Output for GitHub Actions using environment files (updated syntax)
   if (process.env.GITHUB_OUTPUT) {
-    const { appendFileSync } = await import('fs');
     appendFileSync(process.env.GITHUB_OUTPUT, `buffer_count=${bufferCount}\n`);
     appendFileSync(process.env.GITHUB_OUTPUT, `needed=${needed}\n`);
   }
