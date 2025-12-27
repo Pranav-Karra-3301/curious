@@ -1,0 +1,31 @@
+name: Database Keepalive
+
+on:
+  schedule:
+    # Run every 4 hours to prevent Supabase free tier from pausing
+    # Supabase pauses after 7 days of inactivity
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database
+        run: |
+          echo "Pinging Supabase at $(date -u)"
+
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}/rest/v1/questions?select=id&limit=1" \
+            -H "apikey: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}")
+
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Database is alive (HTTP $RESPONSE)"
+          else
+            echo "⚠️ Database returned HTTP $RESPONSE"
+            exit 1
+          fi
+
+      - name: Log success
+        run: echo "Keepalive completed at $(date -u)"
