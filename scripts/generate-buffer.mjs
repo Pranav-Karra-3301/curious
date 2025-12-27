@@ -93,14 +93,14 @@ Return ONLY the question text.`;
     if (attemptNumber < 3) {
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
-    throw new Error(`Invalid question length after ${attemptNumber} attempts`);
+    throw new Error(`Invalid question length after 3 attempts`);
   }
 
   if (usedQuestions.includes(question)) {
     if (attemptNumber < 3) {
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
-    throw new Error(`Duplicate question after ${attemptNumber} attempts`);
+    throw new Error(`Duplicate question after 3 attempts`);
   }
 
   return { text: question, style, topic };

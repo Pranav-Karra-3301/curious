@@ -162,7 +162,7 @@ Return ONLY the question text, no quotes or extra formatting.`;
       console.log(`Invalid question length (${question.length}), retrying... (attempt ${attemptNumber + 1})`);
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
-    throw new Error(`Invalid question length after ${attemptNumber} attempts`);
+    throw new Error(`Invalid question length after 3 attempts`);
   }
 
   // Check for duplicates
@@ -171,7 +171,7 @@ Return ONLY the question text, no quotes or extra formatting.`;
       console.log(`Generated duplicate, retrying... (attempt ${attemptNumber + 1})`);
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
-    throw new Error(`Duplicate question after ${attemptNumber} attempts`);
+    throw new Error(`Duplicate question after 3 attempts`);
   }
 
   return {
