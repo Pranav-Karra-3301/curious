@@ -52,7 +52,7 @@ export function normalizeForComparison(text) {
     .replace(/[""]/g, '"')
     .replace(/['']/g, "'")
     // Remove most punctuation characters (hyphen at end to avoid range interpretation)
-    .replace(/[!"#$%&'()*+,/:;<=>?@[\\\]^_`{|}~.\-]/g, '')
+    .replace(/[!"#$%&'()*+,/:;<=>?@[\\\]^_`{|}~.-]/g, '')
     // Collapse multiple whitespace characters into a single space
     .replace(/\s+/g, ' ');
 }
