@@ -62,9 +62,9 @@ async function checkBuffer() {
 
   // Output for GitHub Actions using environment files (updated syntax)
   if (process.env.GITHUB_OUTPUT) {
-    const fs = await import('fs');
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, `buffer_count=${bufferCount}\n`);
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, `needed=${needed}\n`);
+    const { appendFileSync } = await import('fs');
+    appendFileSync(process.env.GITHUB_OUTPUT, `buffer_count=${bufferCount}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `needed=${needed}\n`);
   }
 
   return { bufferCount, needed };
