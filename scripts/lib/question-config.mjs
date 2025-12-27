@@ -26,7 +26,7 @@ export const questionTopics = [
 // Seasonal themes aligned with PRODUCTION_PLAN.md
 export const seasonalThemes = {
   winter: ['introspection', 'warmth', 'endings', 'rest', 'reflection'],
-  spring: ['growth', 'renewal', 'beginnings', 'change', 'potential'],
+  spring: ['growth', 'renewal', 'beginnings', 'hope', 'change'],
   summer: ['freedom', 'adventure', 'energy', 'joy', 'exploration'],
   fall: ['harvest', 'wisdom', 'gratitude', 'transition', 'preparation']
 };
@@ -52,7 +52,7 @@ export function normalizeForComparison(text) {
     .replace(/[""]/g, '"')
     .replace(/['']/g, "'")
     // Remove most punctuation characters (hyphen at end to avoid range interpretation)
-    .replace(/[!"#$%&'()*+,/:;<=>?@[\\\]^_\\`{|}~.\-]/g, '')
+    .replace(/[!"#$%&'()*+,/:;<=>?@[\\\]^_`{|}~.\-]/g, '')
     // Collapse multiple whitespace characters into a single space
     .replace(/\s+/g, ' ');
 }

@@ -169,7 +169,7 @@ Return ONLY the question text, no quotes or extra formatting.`;
       console.log(`Generated duplicate on attempt ${attemptNumber + 1}, retrying...`);
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
-    throw new Error(`Duplicate question after ${attemptNumber} attempts`);
+    throw new Error(`Duplicate question after ${MAX_RETRY_ATTEMPTS} attempts`);
   }
 
   return {

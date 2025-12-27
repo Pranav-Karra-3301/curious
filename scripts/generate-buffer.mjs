@@ -103,14 +103,14 @@ Return ONLY the question text.`;
     if (attemptNumber < MAX_RETRY_ATTEMPTS) {
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
-    throw new Error(`Invalid question length after ${attemptNumber} attempts`);
+    throw new Error(`Invalid question length after ${MAX_RETRY_ATTEMPTS} attempts`);
   }
 
   if (normalizedUsedQuestions.includes(normalizedQuestion)) {
     if (attemptNumber < MAX_RETRY_ATTEMPTS) {
       return generateQuestion(usedQuestions, attemptNumber + 1);
     }
-    throw new Error(`Duplicate question after ${attemptNumber} attempts`);
+    throw new Error(`Duplicate question after ${MAX_RETRY_ATTEMPTS} attempts`);
   }
 
   return { text: question, style, topic };
