@@ -51,8 +51,8 @@ export function normalizeForComparison(text) {
     // Normalize curly quotes to straight equivalents
     .replace(/[""]/g, '"')
     .replace(/['']/g, "'")
-    // Remove most punctuation characters
-    .replace(/[!"#$%&'()*+,/:;<=>?@[\\\]^_\`{|}~.\-]/g, '')
+    // Remove most punctuation characters (hyphen at end to avoid range interpretation)
+    .replace(/[!"#$%&'()*+,/:;<=>?@[\\\]^_\\`{|}~.\-]/g, '')
     // Collapse multiple whitespace characters into a single space
     .replace(/\s+/g, ' ');
 }
