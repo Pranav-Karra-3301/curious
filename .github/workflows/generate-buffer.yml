@@ -1,0 +1,55 @@
+name: Generate Question Buffer
+
+on:
+  schedule:
+    # Run every 6 hours to maintain buffer
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      buffer_size:
+        description: 'Number of questions to maintain in buffer'
+        required: false
+        default: '7'
+
+env:
+  NODE_VERSION: '20'
+  BUFFER_SIZE: ${{ github.event.inputs.buffer_size || '7' }}
+
+jobs:
+  generate-buffer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check buffer status
+        id: check
+        run: node scripts/check-buffer.mjs
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Generate buffer questions
+        run: node scripts/generate-buffer.mjs
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BUFFER_SIZE: ${{ env.BUFFER_SIZE }}
+
+      - name: Report buffer status
+        run: |
+          echo "## Buffer Generation Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Target buffer size: $BUFFER_SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- Timestamp: $(date -u)" >> $GITHUB_STEP_SUMMARY
