@@ -12,7 +12,7 @@ on:
         default: '7'
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
   BUFFER_SIZE: ${{ github.event.inputs.buffer_size || '7' }}
 
 jobs:
